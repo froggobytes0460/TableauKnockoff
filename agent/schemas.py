@@ -9,11 +9,9 @@ class TableSchema(BaseModel):
 
     name: str = Field(description="The name of the database table.")
     columns: list[str] = Field(
-        default_factory=list,
         description="The list of column names in the database table.",
     )
     column_types: list[dict[str, str]] = Field(
-        default_factory=list,
         description="The list of column names along with their data types in the database table.",
     )
     primary_keys: list[str] = Field(
@@ -75,9 +73,7 @@ class OrderBy(BaseModel):
 class SQLBlueprint(BaseModel):
     """Represents the structured plan for generating a SQL query."""
 
-    tables: list[str] = Field(
-        default_factory=list, description="The names of the database tables to query."
-    )
+    tables: list[str] = Field(description="The names of the database tables to query.")
     metrics: list[Metric] = Field(
         default_factory=list,
         description="A list of quantitative calculations to perform.",
