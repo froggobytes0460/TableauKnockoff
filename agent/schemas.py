@@ -1,31 +1,71 @@
 """The state used for LangGraph agent."""
 
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class TableSchema(BaseModel):
+    """Represents the schema of a database table."""
+
+    name: str = Field(description="The name of the database table.")
+    columns: list[str] = Field(
+        default_factory=list,
+        description="The list of column names in the database table.",
+    )
+    column_types: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="The list of column names along with their data types in the database table.",
+    )
+    primary_keys: list[str] = Field(
+        default_factory=list,
+        description="The list of column names that are primary keys in the database table.",
+    )
+    foreign_keys: list[dict[str, str]] = Field(
+        default_factory=list,
+        description=(
+            "The list of foreign key relationships in the database table. Each relationship is represented as a dictionary with 'column' and 'references' keys."
+        ),
+    )
 
 
 class Filter(BaseModel):
+    """Represents a filter condition to be applied to a column in a SQL query."""
+
     column: str = Field(description="The name of the database column to filter on.")
-    operator: Literal[">=", "<=", ">", "<", "==", "!=", "like", "in"] = Field(
+    operator: Literal["=", "!=", ">", "<", ">=", "<=", "LIKE", "IN"] = Field(
         description="The logical operator to apply to the column and value."
     )
-    value: Any = Field(  # pyright: ignore[reportAny, reportExplicitAny]
+    value: str | int | float | list[str | int | float] = Field(
         description="The value to compare the column against. Use a list for the 'in' operator."
     )
 
+    @model_validator(mode="after")
+    def validate_value_for_in(self):
+        if self.operator == "IN" and not isinstance(self.value, list):
+            raise ValueError("IN operator requires list value")
+        return self
+
 
 class Metric(BaseModel):
+    """Represents a mathematical aggregation to be performed on a column in a SQL query."""
+
     column: str = Field(
         description="The numeric column name to perform a calculation on."
     )
     aggregation: Literal["sum", "avg", "count", "min", "max", "count_distinct"] = Field(
-        description="The mathematical function to apply to the metric column."
+        description="The aggregation to apply to the metric column."
+    )
+    alias: str | None = Field(
+        default=None,
+        description="An optional alias for the resulting metric column in the output.",
     )
 
 
 class OrderBy(BaseModel):
+    """Represents a sorting technique to be applied to a column in a SQL query result."""
+
     column: str = Field(
-        description="The column name used to sort the final result set."
+        description="The column name or metric alias used to sort the final result set."
     )
     sort_type: Literal["asc", "desc"] = Field(
         description="The sort order: ascending (asc) or descending (desc)."
@@ -33,12 +73,16 @@ class OrderBy(BaseModel):
 
 
 class SQLBlueprint(BaseModel):
-    table: str = Field(description="The name of the database table to query.")
+    """Represents the structured plan for generating a SQL query."""
+
+    tables: list[str] = Field(
+        default_factory=list, description="The names of the database tables to query."
+    )
     metrics: list[Metric] = Field(
         default_factory=list,
         description="A list of quantitative calculations to perform.",
     )
-    hue_cols: list[str] = Field(
+    group_by: list[str] = Field(
         default_factory=list,
         description="A list of categorical columns to group the data by.",
     )
@@ -57,6 +101,8 @@ class SQLBlueprint(BaseModel):
 
 
 class ChartConfig(BaseModel):
+    """Represents the configuration for visualizing the SQL query results."""
+
     chart_type: Literal["bar", "line", "scatter", "pie", "area"] = Field(
         description="The type of chart to plot."
     )
@@ -69,6 +115,8 @@ class ChartConfig(BaseModel):
 
 
 class GraphState(BaseModel):
+    """Represents the state used within the LangGraph agent."""
+
     question: str = Field(
         description="The original natural language question asked by the user."
     )
