@@ -1,25 +1,25 @@
 """Handle database operations for the application."""
 
+import re
 from typing import Annotated, Any, Literal
-from typing_extensions import Doc
-from sqlalchemy import (
-    URL,
-    ColumnElement,
+from sqlalchemy.engine import URL, Engine, create_engine
+from sqlalchemy.schema import MetaData, Table
+from sqlalchemy.sql import ColumnElement, Join, Select, and_, func, or_, select
+from sqlalchemy.sql.elements import Label
+from sqlalchemy.types import (
+    DECIMAL,
+    BigInteger,
     Date,
     DateTime,
-    Engine,
+    Enum,
     Float,
     Integer,
     Numeric,
-    Select,
+    SmallInteger,
     Time,
-    create_engine,
-    select,
-    func,
-    MetaData,
-    Table,
-    and_,
 )
+from typing_extensions import Doc
+
 from agent.schemas import SQLBlueprint, TableSchema
 
 
@@ -53,70 +53,67 @@ class DatabaseHandler:
         """
         Generates a database handler from given credentials.
         """
-        db_url = cls.make_conninfo(
-            db_type=db_type,
-            username=username,
-            password=password,
-            host=host,
-            port=port,
-            database=database,
-            **query_kwargs,
+        return cls(
+            db_url=cls.make_conninfo(
+                db_type=db_type,
+                username=username,
+                password=password,
+                host=host,
+                port=port,
+                database=database,
+                **query_kwargs,
+            )
         )
-        return cls(db_url=db_url)
-
-    def test_connection(self) -> bool:
-        """Test connection to database by executing `SELECT 1`."""
-        try:
-            with self.engine.connect() as conn:
-                _ = conn.execute(select(1))
-                return True
-        except Exception:
-            return False
 
     def get_schema(self) -> list[TableSchema]:
         self.metadata.reflect(bind=self.engine)
-
         schema: list[TableSchema] = []
 
+        keywords = [
+            "id",
+            "type",
+            "category",
+            "city",
+            "name",
+            "tier",
+            "region",
+            "country",
+            "status",
+            "segment",
+        ]
+        pattern_string = rf"(?:^|_| )({'|'.join(keywords)})(?:_|$| |(?=[A-Z]))"
+        cat_pattern = re.compile(pattern_string, re.IGNORECASE | re.ASCII)
+
         for name, table in self.metadata.tables.items():
+            column_info: list[dict[str, str]] = []
+
+            for c in table.columns:
+                match c.type:
+                    case _ if cat_pattern.search(c.name):
+                        col_type = "category"
+                    case (
+                        Integer()
+                        | BigInteger()
+                        | SmallInteger()
+                        | Float()
+                        | Numeric()
+                        | DECIMAL()
+                    ):
+                        col_type = "numeric"
+                    case Date() | DateTime() | Time():
+                        col_type = "time"
+                    case Enum():
+                        col_type = "category"
+                    case _:
+                        col_type = "text"
+
+                column_info.append({"name": c.name, "type": col_type})
 
             schema.append(
                 TableSchema(
                     name=name,
                     columns=[c.name for c in table.columns],
-                    column_types=[
-                        {
-                            "name": c.name,
-                            "type": (
-                                "numeric"
-                                if isinstance(c.type, (Integer, Float, Numeric))
-                                else (
-                                    "time"
-                                    if isinstance(c.type, (Date, DateTime, Time))
-                                    else (
-                                        "category"
-                                        if any(
-                                            k in c.name.lower()
-                                            for k in [
-                                                "id",
-                                                "type",
-                                                "category",
-                                                "city",
-                                                "name",
-                                                "tier",
-                                                "region",
-                                                "country",
-                                                "status",
-                                                "segment",
-                                            ]
-                                        )
-                                        else "text"
-                                    )
-                                )
-                            ),
-                        }
-                        for c in table.columns
-                    ],
+                    column_types=column_info,
                     primary_keys=[c.name for c in table.primary_key],
                     foreign_keys=[
                         {
@@ -135,71 +132,130 @@ class DatabaseHandler:
         blueprint: Annotated[
             SQLBlueprint, Doc("AI-generated SQL query generation blueprint.")
         ],
-    ) -> Select[tuple[Any, ...]]:  # pyright: ignore[reportExplicitAny]
-        """
-        Generate a SQLAlchemy Select statement from the `SQLBlueprint`.
-        Supports multi-table queries with automatic FK-based joins.
-        """
+    ) -> Annotated[
+        Select[Any],  # pyright: ignore[reportExplicitAny]
+        Doc("The SQL statement generated from blueprint"),
+    ]:
+        """Generates a SQLAlchemy SQL statement from given blueprint."""
+        if not blueprint.columns and not blueprint.metrics:
+            raise ValueError("At least one column or metric must be provided")
 
-        if not blueprint.tables:
-            raise ValueError("At least one table must be provided")
+        tables = self._load_tables(blueprint)
+        joined = self._build_joins(tables)
 
-        tables = {
+        hue_cols = [
+            self._resolve_column(tables, c.table, c.column) for c in blueprint.group_by
+        ]
+        metrics, metric_map = self._build_metrics(blueprint, tables)
+
+        if not hue_cols and not metrics:
+            raise ValueError("Query must include at least one column or metric")
+
+        stmt = select(*(hue_cols + metrics)).select_from(joined)
+
+        stmt = self._apply_filters(stmt, blueprint, tables)
+
+        if hue_cols:
+            stmt = stmt.group_by(*hue_cols)
+
+        stmt = self._apply_order_by(stmt, blueprint, tables, metric_map)
+
+        return stmt.limit(blueprint.limit)
+
+    def _load_tables(
+        self,
+        blueprint: Annotated[
+            SQLBlueprint, Doc("AI-generated SQL query generation blueprint.")
+        ],
+    ) -> Annotated[dict[str, Table], Doc("The mapping of tables to their names.")]:
+        """Loads tables from SQL blueprint."""
+        table_names = (
+            {c.table for c in blueprint.columns}
+            | {g.table for g in blueprint.group_by}
+            | {f.column.table for f in blueprint.filters}
+            | {o.col.table for o in blueprint.order_by if not isinstance(o.col, str)}
+            | {m.column.table for m in blueprint.metrics}
+        )
+        return {
             name: Table(name, self.metadata, autoload_with=self.engine)
-            for name in blueprint.tables
+            for name in table_names
         }
 
+    def _resolve_column(
+        self,
+        tables: Annotated[
+            dict[str, Table], Doc("The mapping of tables to their names.")
+        ],
+        table: Annotated[str, Doc("Name of table")],
+        column: Annotated[str, Doc("Name of column belonging to table")],
+    ) -> Annotated[
+        ColumnElement[Any],  # pyright: ignore[reportExplicitAny]
+        Doc("The requested column."),
+    ]:
+        """Tries to get the column from the given table."""
+        if table not in tables:
+            raise ValueError(f"Table '{table}' not loaded")
+        if column not in tables[table].c:
+            raise ValueError(f"Column '{column}' not found in table '{table}'")
+        return tables[table].c[column]
+
+    def _build_joins(
+        self,
+        tables: Annotated[
+            dict[str, Table], Doc("The mapping of tables to their names.")
+        ],
+    ) -> Annotated[Table | Join, Doc("The final joined tables.")]:
+        """Builds joins on the tables given."""
         table_list = list(tables.values())
-
-        def _resolve_column(
-            col_name: str,
-        ) -> ColumnElement[Any]:  # pyright: ignore[reportExplicitAny]
-            nonlocal table_list
-            for t in table_list:
-                if col_name in t.c:
-                    return t.c[col_name]
-            raise ValueError(f"Column '{col_name}' not found in any table")
-
         joined = table_list[0]
-        used_tables: set[str] = set([joined.name])
+        used = {joined.name}
 
         for t in table_list[1:]:
-            joined_flag = False
-
             for base in table_list:
                 for fk in base.foreign_keys:
-                    ref_table = fk.column.table
-
-                    if base.name in used_tables and ref_table.name == t.name:
+                    ref = fk.column.table
+                    if base.name in used and ref.name == t.name:
                         joined = joined.join(t, fk.parent == fk.column)
-                        used_tables.add(t.name)
-                        joined_flag = True
+                        used.add(t.name)
                         break
-
-                    if ref_table.name in used_tables and base.name == t.name:
-                        joined = joined.join(t, fk.parent == fk.column)
-                        used_tables.add(base.name)
-                        joined_flag = True
+                    if ref.name in used and base.name == t.name:
+                        joined = joined.join(t, fk.column == fk.parent)
+                        used.add(base.name)
                         break
-
-                if joined_flag:
-                    break
-
-            if not joined_flag:
+                else:
+                    continue
+                break
+            else:
                 raise ValueError(f"No FK relationship found to join table {t.name}")
 
-        hue_cols: list[ColumnElement[Any]] = [  # pyright: ignore[reportExplicitAny]
-            _resolve_column(c) for c in blueprint.group_by
-        ]
+        return joined
 
-        metrics: list[ColumnElement[Any]] = []  # pyright: ignore[reportExplicitAny]
-        metric_map = dict[
-            str, ColumnElement[Any]  # pyright: ignore[reportExplicitAny]
-        ]()
+    def _build_metrics(
+        self,
+        blueprint: Annotated[
+            SQLBlueprint, Doc("AI-generated SQL query generation blueprint.")
+        ],
+        tables: Annotated[
+            dict[str, Table], Doc("The mapping of tables to their names.")
+        ],
+    ) -> tuple[
+        Annotated[list[Label[int]], Doc("The list of metrics inferred.")],
+        Annotated[
+            dict[str, Label[int]], Doc("The mapping of metrics to its name/alias.")
+        ],
+    ]:
+        """Does mathematical aggregation on the columns based on blueprint."""
+        metrics: list[Label[int]] = []
+        metric_map: dict[str, Label[int]] = {}
 
         for m in blueprint.metrics:
-            col = _resolve_column(m.column)
-            label = m.alias if m.alias else m.column
+            col = self._resolve_column(
+                tables,
+                m.column.table,
+                m.column.column,
+            )
+
+            label = m.alias or m.column.column
 
             match m.aggregation:
                 case "sum":
@@ -218,66 +274,101 @@ class DatabaseHandler:
             metrics.append(agg)
             metric_map[label] = agg
 
-        if not hue_cols and not metrics:
-            raise ValueError("Query must include at least one column or metric")
+        return metrics, metric_map
 
-        stmt: Select[tuple[Any, ...]] = select(  # pyright: ignore[reportExplicitAny]
-            *(hue_cols + metrics)
-        ).select_from(joined)
-
+    def _apply_filters(
+        self,
+        stmt: Annotated[
+            Select[Any],  # pyright: ignore[reportExplicitAny]
+            Doc("The SQL statement being generated."),
+        ],
+        blueprint: Annotated[
+            SQLBlueprint, Doc("AI-generated SQL query generation blueprint.")
+        ],
+        tables: Annotated[
+            dict[str, Table], Doc("The mapping of tables to their names.")
+        ],
+    ) -> Annotated[
+        Select[Any],  # pyright: ignore[reportExplicitAny]
+        Doc("The SQL statement with added filters."),
+    ]:
+        """Updates SQL statement to include filters based on given blueprint."""
         filters: list[ColumnElement[bool]] = []
+
         for f in blueprint.filters:
-            col = _resolve_column(f.column)
+            col = self._resolve_column(
+                tables,
+                f.column.table,
+                f.column.column,
+            )
 
             match f.operator:
                 case "=":
-                    filter_expr = col == f.value
+                    filters.append(col == f.value)
                 case "!=":
-                    filter_expr = col != f.value
+                    filters.append(col != f.value)
                 case ">=":
-                    filter_expr = col >= f.value
+                    filters.append(col >= f.value)
                 case "<=":
-                    filter_expr = col <= f.value
+                    filters.append(col <= f.value)
                 case ">":
-                    filter_expr = col > f.value
+                    filters.append(col > f.value)
                 case "<":
-                    filter_expr = col < f.value
+                    filters.append(col < f.value)
                 case "LIKE":
-                    value = str(f.value)
-                    if "%" not in value:
-                        value = f"%{value}%"
-                    filter_expr = col.like(value)
+                    if isinstance(f.value, list):
+                        filters.append(or_(*[col.like(f"%{v}%") for v in f.value]))
+                    else:
+                        filters.append(col.like(f"%{f.value}%"))
                 case "IN":
                     if not isinstance(f.value, list):
                         raise ValueError("IN operator requires list value")
-                    filter_expr = col.in_(f.value)
+                    filters.append(col.in_(f.value))
 
-            filters.append(filter_expr)
+        return stmt.where(and_(*filters)) if filters else stmt
 
-        if filters:
-            stmt = stmt.where(and_(*filters))
-
-        if hue_cols:
-            stmt = stmt.group_by(*hue_cols)
-
-        # Order by
+    def _apply_order_by(
+        self,
+        stmt: Annotated[
+            Select[Any],  # pyright: ignore[reportExplicitAny]
+            Doc("The SQL statement being generated."),
+        ],
+        blueprint: Annotated[
+            SQLBlueprint, Doc("AI-generated SQL query generation blueprint.")
+        ],
+        tables: Annotated[
+            dict[str, Table], Doc("The mapping of tables to their names.")
+        ],
+        metric_map: dict[str, Label[int]],
+    ) -> Annotated[
+        Select[Any],  # pyright: ignore[reportExplicitAny]
+        Doc("The SQL statement with added ordering."),
+    ]:
+        """Updates SQL statement to include result ordering based on given blueprint."""
         for o in blueprint.order_by:
-            if o.column in metric_map:
-                col = metric_map[o.column]
+            if isinstance(o.col, str) and o.col in metric_map:
+                col = metric_map[o.col]
             else:
-                col = _resolve_column(o.column)
+                col = self._resolve_column(
+                    tables,
+                    o.col.table,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+                    o.col.column,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+                )
 
             stmt = stmt.order_by(col.desc() if o.sort_type == "desc" else col.asc())
 
-        return stmt.limit(blueprint.limit)
+        return stmt
 
     def execute_query(
         self,
         stmt: Annotated[
-            Select[tuple[Any, ...]],  # pyright: ignore[reportExplicitAny]
+            Select[Any],  # pyright: ignore[reportExplicitAny]
             Doc("The SQL statement to execute."),
         ],
-    ) -> list[dict[str, Any]]:  # pyright: ignore[reportExplicitAny]
+    ) -> Annotated[
+        list[dict[str, Any]],  # pyright: ignore[reportExplicitAny]
+        Doc("The results of SQL query as a parsed dictionary."),
+    ]:
         """Executes the statement and returns a list of dicts for the GraphState."""
 
         with self.engine.connect() as conn:
@@ -287,28 +378,28 @@ class DatabaseHandler:
     def compile_sql_query(
         self,
         stmt: Annotated[
-            Select[tuple[Any, ...]],  # pyright: ignore[reportExplicitAny]
+            Select[Any],  # pyright: ignore[reportExplicitAny]
             Doc("The SQL statement to compile."),
         ],
-    ) -> str:
+    ) -> Annotated[str, Doc("The SQL query in text-form.")]:
         """Compiles the SQLAlchemy statement to a raw SQL string."""
         return stmt.compile(self.engine, compile_kwargs={"literal_binds": True}).string
 
     @staticmethod
     def make_conninfo(
         db_type: Annotated[
-            Literal["postgresql", "mysql", "sqlite"], "Different RDBMS."
+            Literal["postgresql", "mysql", "sqlite"], Doc("Different RDBMS.")
         ],
-        database: Annotated[str, "Database name."],
-        username: Annotated[str | None, "Database username."] = None,
-        password: Annotated[str | None, "Database password."] = None,
-        host: Annotated[str | None, "Database host."] = None,
-        port: Annotated[int | None, "Database port."] = None,
+        database: Annotated[str, Doc("Database name.")],
+        username: Annotated[str | None, Doc("Database username.")] = None,
+        password: Annotated[str | None, Doc("Database password.")] = None,
+        host: Annotated[str | None, Doc("Database host.")] = None,
+        port: Annotated[int | None, Doc("Database port.")] = None,
         **query_kwargs: Annotated[  # pyright: ignore[reportAny]
             Any,  # pyright: ignore[reportExplicitAny]
             Doc("Additional query parameters."),
         ],
-    ) -> URL:
+    ) -> Annotated[URL, Doc("URL to the database.")]:
         """
         Build a SQLAlchemy connection URL from credentials using SQLAlchemy URL parsing. Supports PostgreSQL, MySQL, and SQLite.
         """

@@ -1,4 +1,4 @@
-"""The state used for LangGraph agent."""
+"""The state used for LangGraph agent and database schematics."""
 
 from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
@@ -26,10 +26,19 @@ class TableSchema(BaseModel):
     )
 
 
+class ColumnRef(BaseModel):
+    """Mapping of column name with its table."""
+
+    table: str = Field(description="Name of the database table.")
+    column: str = Field(description="Column belonging to database table.")
+
+
 class Filter(BaseModel):
     """Represents a filter condition to be applied to a column in a SQL query."""
 
-    column: str = Field(description="The name of the database column to filter on.")
+    column: ColumnRef = Field(
+        description="The column (with table reference) to filter on."
+    )
     operator: Literal["=", "!=", ">", "<", ">=", "<=", "LIKE", "IN"] = Field(
         description="The logical operator to apply to the column and value."
     )
@@ -47,8 +56,8 @@ class Filter(BaseModel):
 class Metric(BaseModel):
     """Represents a mathematical aggregation to be performed on a column in a SQL query."""
 
-    column: str = Field(
-        description="The numeric column name to perform a calculation on."
+    column: ColumnRef = Field(
+        description="The column (with table reference) to perform a calculation on."
     )
     aggregation: Literal["sum", "avg", "count", "min", "max", "count_distinct"] = Field(
         description="The aggregation to apply to the metric column."
@@ -62,8 +71,8 @@ class Metric(BaseModel):
 class OrderBy(BaseModel):
     """Represents a sorting technique to be applied to a column in a SQL query result."""
 
-    column: str = Field(
-        description="The column name or metric alias used to sort the final result set."
+    col: ColumnRef | str = Field(
+        description="The column (with table reference) OR metric alias used to sort the final result set."
     )
     sort_type: Literal["asc", "desc"] = Field(
         description="The sort order: ascending (asc) or descending (desc)."
@@ -73,14 +82,16 @@ class OrderBy(BaseModel):
 class SQLBlueprint(BaseModel):
     """Represents the structured plan for generating a SQL query."""
 
-    tables: list[str] = Field(description="The names of the database tables to query.")
+    columns: list[ColumnRef] = Field(
+        description="List of column selections where each item maps a table name to a column name."
+    )
+    group_by: list[ColumnRef] = Field(
+        default_factory=list,
+        description="A list of categorical columns to group the data by.",
+    )
     metrics: list[Metric] = Field(
         default_factory=list,
         description="A list of quantitative calculations to perform.",
-    )
-    group_by: list[str] = Field(
-        default_factory=list,
-        description="A list of categorical columns to group the data by.",
     )
     filters: list[Filter] = Field(
         default_factory=list,
@@ -116,8 +127,8 @@ class GraphState(BaseModel):
     question: str = Field(
         description="The original natural language question asked by the user."
     )
-    db_schema: dict[str, Any] = Field(  # pyright: ignore[reportExplicitAny]
-        default_factory=dict,
+    db_schema: list[TableSchema] = Field(
+        default_factory=list,
         description="Database schema, describing the database tables, columns, and data types.",
     )
     sql_blueprint: SQLBlueprint | None = Field(
