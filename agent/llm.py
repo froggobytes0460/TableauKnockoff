@@ -2,117 +2,61 @@
 The module to allow LLM interaction with the agent.
 """
 
-from typing import Annotated
-from langchain_core.prompts import PromptTemplate
+import os
+from pathlib import Path
+from typing import Annotated, Any, cast
+
+from dotenv import load_dotenv
+from langchain_core.runnables import RunnableSerializable
 from langchain_groq import ChatGroq
 from typing_extensions import Doc
-from .schemas import SQLBlueprint, TableSchema
+
+from agent.prompts import PLANNER_PROMPT, PLANNER_RETRY_PROMPT
+from agent.schemas import SQLBlueprint, TableSchema
+
+if not (path := Path(".env").resolve()).exists():
+    raise FileNotFoundError(f"Missing .env file at path: {path}")
+
+_ = load_dotenv(path)
 
 MODEL_ID = "openai/gpt-oss-120b"
-
-
-PLANNER_PROMPT = PromptTemplate(
-    template="""You are a strict BI query planner that converts natural language into a structured SQL query plan.
-
-Database schema:
-{db_schema}
-
-User question:
-{user_question}
-
-Rules:
-- Use ONLY tables and columns present in the schema
-- NEVER hallucinate columns or tables
-- Always include at least ONE metric
-- Metrics MUST use aggregation: sum, avg, count, min, max, count_distinct
-- Only numeric columns should be used for aggregations (except count)
-- Grouping columns MUST exist in the table
-- Filters must match column types logically
-- Use LIKE only for text columns
-- Use IN only with a list of values
-- Prefer simple queries over complex ones
-- If the query is ambiguous, choose the most reasonable interpretation
-- Choose the most relevant table based on the question
-- Prefer tables that contain both grouping columns and metric columns
-- ORDER BY can use either a column name or a metric alias
-
-Output requirements:
-- Return ONLY valid JSON
-- Do NOT include explanations, comments, or markdown
-
-
-Return JSON following this structure:
-{
-  "table": "string",
-  "metrics": [{"column": "string", "aggregation": "sum|avg|count|min|max|count_distinct", "alias": "string"}],
-  "group_by": ["string"],
-  "filters": [{"column": "string", "operator": "=|!=|>|<|>=|<=|LIKE|IN", "value": "string|number|list"}],
-  "order_by": [{"column": "string", "sort_type": "asc|desc"}],
-  "limit": 100
-}
-""",
-    input_variables=["db_schema", "user_question"],
-)
-
-PLANNER_RETRY_PROMPT = PromptTemplate(
-    template="""You are a strict BI query planner fixing an invalid SQL query plan.
-
-Database schema:
-{db_schema}
-
-User question:
-{user_question}
-
-Previous SQL blueprint:
-{previous_blueprint}
-
-Error:
-{error}
-
-Your task:
-Fix the SQL blueprint so that it is valid and executable.
-
-Rules:
-- Use ONLY tables and columns present in the schema
-- NEVER hallucinate columns or tables
-- Always include at least ONE metric
-- Metrics MUST use aggregation: sum, avg, count, min, max, count_distinct
-- Only numeric columns should be used for aggregations (except count)
-- Grouping columns MUST exist in the table
-- Fix invalid columns, operators, or structure based on the error
-- If a column does not exist, replace it with the closest valid column
-- Ensure filters and operators are valid
-- Ensure ORDER BY columns exist (or match metric aliases)
-- Choose the most relevant table based on the question
-- Prefer tables that contain both grouping columns and metric columns
-- ORDER BY can use either a column name or a metric alias
-
-Output requirements:
-- Return ONLY valid JSON
-- Do NOT include explanations, comments, or markdown
-
-Return JSON following this structure:
-{
-  "table": "string",
-  "metrics": [{"column": "string", "aggregation": "sum|avg|count|min|max|count_distinct", "alias": "string"}],
-  "group_by": ["string"],
-  "filters": [{"column": "string", "operator": "=|!=|>|<|>=|<=|LIKE|IN", "value": "string|number|list"}],
-  "order_by": [{"column": "string", "sort_type": "asc|desc"}],
-  "limit": 100
-}
-""",
-    input_variables=["db_schema", "user_question", "previous_blueprint", "error"],
-)
 
 
 class LLMPlanner:
     """The LLM planner to generate SQL blueprint from the question and database schema."""
 
-    def __init__(self):
-        llm: ChatGroq = ChatGroq(model=MODEL_ID, temperature=0, max_retries=2)
-        self.llm = llm.with_structured_output(  # pyright: ignore[reportUnknownMemberType, reportUnannotatedClassAttribute]  # pyright: ignore[reportUnknownMemberType]
-            SQLBlueprint
+    planner_chain: RunnableSerializable[
+        dict[str, Any], SQLBlueprint  # pyright: ignore[reportExplicitAny]
+    ]
+    retry_planner_chain: RunnableSerializable[
+        dict[str, Any], SQLBlueprint  # pyright: ignore[reportExplicitAny]
+    ]
+
+    def __init__(
+        self,
+        api_key: Annotated[
+            str | None, Doc(f"The API key for accessing Groq API.")
+        ] = None,
+    ):
+        resolved_api_key: str | None = api_key if api_key else os.getenv("GROQ_API_KEY")
+        llm = ChatGroq(
+            model=MODEL_ID,
+            api_key=resolved_api_key,  # pyright: ignore[reportArgumentType]
+            temperature=0.0,
+            max_retries=2,
+            model_kwargs={"response_format": {"type": "json_object"}},
         )
+        structured_llm = cast(
+            RunnableSerializable[
+                Any, SQLBlueprint  # pyright: ignore[reportExplicitAny]
+            ],
+            llm.with_structured_output(  # pyright: ignore[reportUnknownMemberType]
+                SQLBlueprint, method="json_mode"
+            ),
+        )
+
+        self.planner_chain = PLANNER_PROMPT | structured_llm
+        self.retry_planner_chain = PLANNER_RETRY_PROMPT | structured_llm
 
     def __call__(
         self,
@@ -132,10 +76,7 @@ class LLMPlanner:
     ) -> SQLBlueprint:
         """Generate SQL blueprint from the question and database schema."""
         if retry and previous_blueprint:
-            return (  # pyright: ignore[reportReturnType, reportUnknownVariableType, reportUnknownMemberType]
-                PLANNER_RETRY_PROMPT
-                | self.llm  # pyright: ignore[reportUnknownMemberType]
-            ).invoke(
+            return self.retry_planner_chain.invoke(
                 {
                     "db_schema": self.format_schema(db_schema),
                     "user_question": question,
@@ -143,9 +84,7 @@ class LLMPlanner:
                     "error": error_message,
                 }
             )
-        return (  # pyright: ignore[reportReturnType, reportUnknownMemberType, reportUnknownVariableType]
-            PLANNER_PROMPT | self.llm  # pyright: ignore[reportUnknownMemberType]
-        ).invoke(
+        return self.planner_chain.invoke(
             {
                 "db_schema": self.format_schema(db_schema),
                 "user_question": question,

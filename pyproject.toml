@@ -19,4 +19,5 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "httpx>=0.26.0",
+    "black>=26.3.1",
 ]

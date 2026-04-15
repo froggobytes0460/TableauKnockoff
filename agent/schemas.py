@@ -101,9 +101,9 @@ class SQLBlueprint(BaseModel):
         default_factory=list,
         description="Instructions for sorting the resulting data rows.",
     )
-    limit: int = Field(
+    limit: int | None = Field(
         default=100,
-        description="The maximum number of rows to return from the database.",
+        description="The maximum number of rows to return from the database. (Set to None for no limit)",
     )
 
 
@@ -150,4 +150,9 @@ class GraphState(BaseModel):
     error: str | None = Field(
         default=None,
         description="A detailed error message if any step in the graph fails.",
+    )
+
+    retry_count: int = Field(
+        default=0,
+        description="The amount of times the agent retries planning SQL query.",
     )
