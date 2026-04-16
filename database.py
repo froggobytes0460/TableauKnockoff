@@ -4,7 +4,7 @@ import re
 from typing import Annotated, Any, Literal
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.schema import MetaData, Table
-from sqlalchemy.sql import ColumnElement, Join, Select, and_, func, or_, select
+from sqlalchemy.sql import ColumnElement, Join, Select, and_, func, or_, select, text
 from sqlalchemy.sql.elements import Label
 from sqlalchemy.types import (
     DECIMAL,
@@ -366,7 +366,7 @@ class DatabaseHandler:
     def execute_query(
         self,
         stmt: Annotated[
-            Select[Any],  # pyright: ignore[reportExplicitAny]
+            Select[Any] | str,  # pyright: ignore[reportExplicitAny]
             Doc("The SQL statement to execute."),
         ],
     ) -> Annotated[
@@ -376,7 +376,7 @@ class DatabaseHandler:
         """Executes the statement and returns a list of dicts for the GraphState."""
 
         with self.engine.connect() as conn:
-            result = conn.execute(stmt)
+            result = conn.execute(text(stmt) if isinstance(stmt, str) else stmt)
             return [dict(row) for row in result.mappings()]
 
     def compile_sql_query(
