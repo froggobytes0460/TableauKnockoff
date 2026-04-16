@@ -115,6 +115,27 @@ class SQLBlueprint(BaseModel):
         return self
 
 
+class ValidationResult(BaseModel):
+    """Represents the result of validating a generated SQL query."""
+
+    is_valid: bool = Field(description="Indicates whether the SQL query is valid.")
+    confidence_score: float = Field(
+        description="A calibrated confidence score between 0.0 and 1.0 representing how likely the SQL correctly answers the question.",
+        ge=0.0,
+        le=1.0,
+    )
+    error_message: str | None = Field(
+        default=None,
+        description="Detailed error message if the SQL query is invalid.",
+    )
+
+    @model_validator(mode="after")
+    def validate_error_message(self):
+        if not self.is_valid and not self.error_message:
+            raise ValueError("Error message required when SQL is invalid")
+        return self
+
+
 class ChartConfig(BaseModel):
     """Represents the configuration for visualizing the SQL query results."""
 

@@ -8,7 +8,7 @@ from langgraph.types import Command
 from langgraph.runtime import Runtime
 from typing_extensions import Doc
 
-from agent.llm import LLMPlanner
+from agent.llm import LLMPlanner, LLMValidator
 from agent.schemas import GraphState
 from database import DatabaseHandler
 
@@ -56,4 +56,61 @@ def plan_node(
                 update={"error": str(e), "retry_count": state.retry_count + 1},
             )
 
+    return Command(goto=END)
+
+
+def validation_node(
+    state: Annotated[GraphState, Doc("The graph state for langgraph agent.")],
+    runtime: Annotated[
+        Runtime[DatabaseContext], Doc("The runtime context for langgraph agent.")
+    ],
+) -> Command[str]:
+    llm_validator = LLMValidator()
+    db = runtime.context["db"]
+
+    if not state.sql_blueprint:
+        return Command(goto="plan")
+
+    if state.retry_count <= 3:
+        try:
+            sql_query = db.generate_sql_query(state.sql_blueprint)
+            validation_output = llm_validator(
+                question=state.question,
+                sql_dialect=db.engine.dialect.name,
+                sql_query=db.compile_sql_query(sql_query),
+            )
+            if not validation_output.is_valid:
+                return Command(
+                    goto="plan",
+                    update={
+                        "error": validation_output.error_message,
+                        "retry_count": state.retry_count + 1,
+                    },
+                )
+
+            if validation_output.confidence_score < 0.7:
+                return Command(
+                    goto="plan",
+                    update={
+                        "error": f"Low confidence SQL validation: {validation_output.error_message or 'uncertain correctness'}",
+                        "retry_count": state.retry_count + 1,
+                    },
+                )
+
+            return Command(
+                goto="charting",
+                update={
+                    "sql": db.compile_sql_query(sql_query),
+                    "preview": db.execute_query(sql_query.limit(10)),
+                },
+            )
+
+        except Exception as e:
+            return Command(
+                goto="plan",
+                update={
+                    "error": f"Validation failed: {str(e)}",
+                    "retry_count": state.retry_count + 1,
+                },
+            )
     return Command(goto=END)
