@@ -71,7 +71,7 @@ class Metric(BaseModel):
 class OrderBy(BaseModel):
     """Represents a sorting technique to be applied to a column in a SQL query result."""
 
-    col: ColumnRef | str = Field(
+    column: ColumnRef | str = Field(
         description="The column (with table reference) OR metric alias used to sort the final result set."
     )
     sort_type: Literal["asc", "desc"] = Field(
@@ -80,31 +80,39 @@ class OrderBy(BaseModel):
 
 
 class SQLBlueprint(BaseModel):
-    """Represents the structured plan for generating a SQL query."""
+    """Simplified structured plan for generating a SQL query."""
 
-    columns: list[ColumnRef] = Field(
-        description="List of column selections where each item maps a table name to a column name."
-    )
-    group_by: list[ColumnRef] = Field(
+    dimensions: list[ColumnRef] = Field(
         default_factory=list,
-        description="A list of categorical columns to group the data by.",
+        description="Columns used for grouping and selection (no need for separate group_by).",
     )
+
     metrics: list[Metric] = Field(
         default_factory=list,
-        description="A list of quantitative calculations to perform.",
+        description="Aggregations to compute.",
     )
+
     filters: list[Filter] = Field(
         default_factory=list,
-        description="The set of criteria used to restrict which rows are retrieved.",
+        description="Filtering conditions.",
     )
+
     order_by: list[OrderBy] = Field(
         default_factory=list,
-        description="Instructions for sorting the resulting data rows.",
+        description="Sorting rules.",
     )
-    limit: int | None = Field(
+
+    limit: int = Field(
         default=100,
-        description="The maximum number of rows to return from the database. (Set to None for no limit)",
+        description="Maximum rows to return.",
     )
+
+    @model_validator(mode="after")
+    def validate_structure(self):
+        if not self.dimensions and not self.metrics:
+            raise ValueError("At least one dimension or metric required")
+
+        return self
 
 
 class ChartConfig(BaseModel):

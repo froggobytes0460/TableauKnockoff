@@ -28,11 +28,17 @@ User question:
 
 ### 3. Metric rules (STRICT)
 - Metrics MUST follow this structure:
-  - "column": base column name (e.g. "quantity")
+  - "column": object with keys {{"table": "string", "column": "string"}}
   - "aggregation": one of ["sum", "avg", "count", "min", "max", "count_distinct"]
   - "alias": optional string
+- NEVER output plain strings for columns
 - NEVER output SQL expressions like "SUM(quantity)"
 - NEVER use "expression" field
+- If you output a string instead of object → the answer is WRONG
+- HARD ENFORCEMENT:
+  - If "column" is not an object with {{"table": "...", "column": "..."}}, the entire output is INVALID
+  - You MUST convert any inferred column into this object format
+  - DO NOT output strings under any circumstance
 
 ### 4. Derived metrics
 - If the question asks for "total quantity", "sales value", or similar:
@@ -42,41 +48,64 @@ User question:
     alias = "total_quantity"
   - (The system will compute revenue downstream)
 
-### 5. Grouping rules
-- group_by must include all non-aggregated columns
-- group_by columns must exist in schema
+### 5. Dimensions
+- "dimensions" must include all grouping columns
+- Each dimension MUST be an object: {{"table": "string", "column": "string"}}
+- NEVER output plain dimension names
+- If dimensions contain strings → the answer is WRONG
+- HARD ENFORCEMENT:
+  - Each dimension MUST be {{"table": "...", "column": "..."}}
+  - Strings are strictly forbidden
 
-### 6. Column selection
-- "columns" must include all grouping columns
-- Each column must include BOTH table and column name
-
-### 7. Filters
+### 6. Filters
+- "column" MUST be an object: {{"table": "string", "column": "string"}}
 - Use only valid operators: =, !=, >, <, >=, <=, LIKE, IN
 - IN requires list values
 - LIKE only for text columns
 
-### 8. Ordering
-- order_by can use:
-  - column names
-  - metric aliases
+### 7. Ordering
+- "column" MUST be EITHER:
+  - {{"table": "string", "column": "string"}}
+  - OR a metric alias string
+- If referring to a table column → MUST use object format
+- Plain strings are ONLY allowed if referencing a metric alias
 
-### 9. Limit
+### 8. Limit
 - limit MUST always be an integer
 - default to 100 if not specified
 - NEVER return null
 
-### 10. Output format (STRICT JSON ONLY)
-Return EXACTLY this structure (JSON keys only):
+### 9. Default ordering (IMPORTANT)
+- If a metric is present and no explicit sort is requested:
+  - Sort by the first metric alias in descending order
+- "order_by" MUST NOT be empty when metrics are present
 
-"columns": list of objects with keys "table" and "column"
-"metrics": list of objects with keys "column", "aggregation", "alias"
-"group_by": list of strings
-"filters": list of objects with keys "column", "operator", "value"
-"order_by": list of objects with keys "column", "sort_type"
-"limit": integer (null for no limit)
+### 10. Output format (STRICT JSON ONLY)
+Return EXACTLY this structure:
+
+"dimensions": list of {{"table": "string", "column": "string"}}
+"metrics": list of {{"column": {{"table": "string", "column": "string"}}, "aggregation": "string", "alias": "string|null"}}
+"filters": list of {{"column": {{"table": "string", "column": "string"}}, "operator": "string", "value": "any"}}
+"order_by": list of {{"column": {{"table": "string", "column": "string"}} OR "string", "sort_type": "asc|desc"}}
+"limit": integer
 
 - Output must be valid JSON parsable by Python json.loads()
 - Do NOT include explanations, markdown, or extra text
+
+## VALID EXAMPLE
+{{
+  "dimensions": [{{"table": "product", "column": "product_category"}}],
+  "metrics": [{{"column": {{"table": "sales", "column": "quantity"}}, "aggregation": "sum", "alias": "total_quantity"}}],
+  "filters": [],
+  "order_by": [{{"column": "total_quantity", "sort_type": "desc"}}],
+  "limit": 100
+}}
+
+## INVALID EXAMPLE (DO NOT DO THIS)
+{{
+  "dimensions": ["product_category"],
+  "metrics": [{{"column": "quantity", "aggregation": "sum"}}]
+}}
 """,
     input_variables=["db_schema", "user_question"],
 )
@@ -106,36 +135,61 @@ Error:
 
 ### Metrics (STRICT)
 - Must include:
-  - column
+  - column: object with keys {{"table": "string", "column": "string"}}
   - aggregation
 - Allowed aggregations: sum, avg, count, min, max, count_distinct
+- NEVER output plain strings for columns
 - NEVER output SQL expressions
 - NEVER use "expression"
+- HARD ENFORCEMENT:
+  - "column" MUST be an object {{"table": "...", "column": "..."}}
+  - Strings are INVALID
 
-### Columns
-- Must include table + column mapping
-- Must align with group_by
-
-### Grouping
-- All non-aggregated columns must be in group_by
+### Dimensions
+- Must include table + column mapping as objects {{"table": "string", "column": "string"}}
+- Represents grouping and selection
+- HARD ENFORCEMENT:
+  - All entries MUST be objects
+  - Strings are INVALID
 
 ### Filters
+- "column" MUST be an object {{"table": "string", "column": "string"}}
 - Fix invalid operators or values
 - IN requires list
 
 ### Ordering
-- Must reference valid column or metric alias
+- "column" can be:
+  - {{"table": "string", "column": "string"}}
+  - OR a metric alias string
 
 ### Limit
 - MUST be integer
 - If missing or null → set to 100
+
+### Default ordering (IMPORTANT)
+- If a metric is present and no explicit sort is requested:
+  - Sort by the first metric alias in descending order
+- "order_by" MUST NOT be empty when metrics are present
 
 ---
 
 ## OUTPUT
 
 Return ONLY valid JSON with keys:
-"columns", "metrics", "group_by", "filters", "order_by", "limit"
+"dimensions": list of {{"table": "string", "column": "string"}}
+"metrics": list of {{"column": {{"table": "string", "column": "string"}}, "aggregation": "string", "alias": "string|null"}}
+"filters": list of {{"column": {{"table": "string", "column": "string"}}, "operator": "string", "value": "any"}}
+"order_by": list of {{"column": {{"table": "string", "column": "string"}} OR "string", "sort_type": "asc|desc"}}
+"limit": integer
+
+## VALID EXAMPLE
+{{
+  "dimensions": [{{"table": "product", "column": "product_category"}}],
+  "metrics": [{{"column": {{"table": "sales", "column": "quantity"}}, "aggregation": "sum", "alias": "total_quantity"}}],
+  "filters": [],
+  "order_by": [{{"column": "total_quantity", "sort_type": "desc"}}],
+  "limit": 100
+}}
 """,
     input_variables=["db_schema", "user_question", "previous_blueprint", "error"],
 )

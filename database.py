@@ -137,25 +137,26 @@ class DatabaseHandler:
         Doc("The SQL statement generated from blueprint"),
     ]:
         """Generates a SQLAlchemy SQL statement from given blueprint."""
-        if not blueprint.columns and not blueprint.metrics:
+        if not blueprint.dimensions and not blueprint.metrics:
             raise ValueError("At least one column or metric must be provided")
 
         tables = self._load_tables(blueprint)
         joined = self._build_joins(tables)
 
         hue_cols = [
-            self._resolve_column(tables, c.table, c.column) for c in blueprint.group_by
+            self._resolve_column(tables, c.table, c.column)
+            for c in blueprint.dimensions
         ]
         metrics, metric_map = self._build_metrics(blueprint, tables)
 
-        if not hue_cols and not metrics:
+        if not blueprint.dimensions and not metrics:
             raise ValueError("Query must include at least one column or metric")
 
         stmt = select(*(hue_cols + metrics)).select_from(joined)
 
         stmt = self._apply_filters(stmt, blueprint, tables)
 
-        if hue_cols:
+        if blueprint.metrics and hue_cols:
             stmt = stmt.group_by(*hue_cols)
 
         stmt = self._apply_order_by(stmt, blueprint, tables, metric_map)
@@ -170,10 +171,13 @@ class DatabaseHandler:
     ) -> Annotated[dict[str, Table], Doc("The mapping of tables to their names.")]:
         """Loads tables from SQL blueprint."""
         table_names = (
-            {c.table for c in blueprint.columns}
-            | {g.table for g in blueprint.group_by}
+            {d.table for d in blueprint.dimensions}
             | {f.column.table for f in blueprint.filters}
-            | {o.col.table for o in blueprint.order_by if not isinstance(o.col, str)}
+            | {
+                o.column.table
+                for o in blueprint.order_by
+                if not isinstance(o.column, str)
+            }
             | {m.column.table for m in blueprint.metrics}
         )
         return {
@@ -346,13 +350,13 @@ class DatabaseHandler:
     ]:
         """Updates SQL statement to include result ordering based on given blueprint."""
         for o in blueprint.order_by:
-            if isinstance(o.col, str) and o.col in metric_map:
-                col = metric_map[o.col]
+            if isinstance(o.column, str) and o.column in metric_map:
+                col = metric_map[o.column]
             else:
                 col = self._resolve_column(
                     tables,
-                    o.col.table,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
-                    o.col.column,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+                    o.column.table,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+                    o.column.column,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
                 )
 
             stmt = stmt.order_by(col.desc() if o.sort_type == "desc" else col.asc())
