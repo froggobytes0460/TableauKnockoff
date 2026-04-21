@@ -27,6 +27,7 @@ dist/
 .uv/
 
 # Testing
+.langgraph_api/
 .pytest_cache/
 .coverage
 htmlcov/

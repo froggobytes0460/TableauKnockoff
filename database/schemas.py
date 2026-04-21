@@ -1,7 +1,109 @@
-"""The state used for LangGraph agent and database schematics."""
+"""Schemas for database interactions."""
 
-from typing import Any, Literal
-from pydantic import BaseModel, Field, model_validator
+from typing import Literal, override
+from pydantic.config import ConfigDict
+from pydantic.fields import Field, computed_field
+from pydantic.functional_validators import model_validator
+from pydantic.main import BaseModel
+
+
+class QueryParam(BaseModel):
+    """Represents a single query parameter for database connection URLs."""
+
+    model_config = ConfigDict(  # pyright: ignore[reportUnannotatedClassAttribute]
+        frozen=True
+    )
+    key: str = Field(
+        min_length=1,
+        description="The name of the query parameter.",
+        examples=["sslmode", "connect_timeout"],
+    )
+    value: str | int | float | bool = Field(
+        description="The value of the query parameter. Must be JSON-serializable and URL-safe."
+    )
+
+    @override
+    def __hash__(self) -> int:
+        return hash((type(self), *self.__dict__.values()))
+
+
+class DatabaseCredential(BaseModel):
+    """Represents the credentials required to connect to a database."""
+
+    model_config = ConfigDict(  # pyright: ignore[reportUnannotatedClassAttribute]
+        frozen=True
+    )
+
+    db_type: Literal["postgresql", "mysql", "sqlite"] = Field(
+        description="Type of database."
+    )
+
+    database: str = Field(
+        min_length=1,
+        description="The name of the database to connect to.",
+    )
+
+    username: str | None = Field(
+        default=None,
+        description="Username for authentication (not required for SQLite).",
+    )
+
+    password: str | None = Field(
+        default=None,
+        description="Password for authentication (not required for SQLite).",
+        json_schema_extra={"format": "password"},
+    )
+
+    host: str | None = Field(
+        default=None,
+        description="Database host (required for PostgreSQL/MySQL).",
+        examples=["localhost", "db.example.com"],
+    )
+
+    port: int | None = Field(
+        default=None,
+        gt=0,
+        description="Database port (required for PostgreSQL/MySQL).",
+        examples=[5432, 3306],
+    )
+
+    query: tuple[QueryParam, ...] = Field(
+        default_factory=tuple,
+        description="Optional query parameters (SSL, timeouts, etc.).",
+    )
+
+    @model_validator(mode="after")
+    def validate_by_db_type(self):
+        if self.db_type in {"postgresql", "mysql"}:
+            missing = [
+                field for field in ["host", "port"] if getattr(self, field) is None
+            ]
+            if missing:
+                raise ValueError(
+                    f"{self.db_type} requires the following fields: {', '.join(missing)}"
+                )
+
+        if self.db_type == "sqlite":
+            if any([self.host, self.port, self.username, self.password]):
+                raise ValueError(
+                    "SQLite must not include host, port, username, or password"
+                )
+
+        return self
+
+    @computed_field
+    @property
+    def requires_network(self) -> bool:
+        """Computed property instead of a mutated private attribute."""
+        return self.db_type in {"postgresql", "mysql"}
+
+    def to_query_dict(self) -> dict[str, str]:
+        """Convert query params into dict for SQLAlchemy URL."""
+        return {param.key: str(param.value) for param in self.query}
+
+    @override
+    def __hash__(self) -> int:
+        return hash((type(self), *self.__dict__.values()))
 
 
 class TableSchema(BaseModel):
@@ -113,75 +215,3 @@ class SQLBlueprint(BaseModel):
             raise ValueError("At least one dimension or metric required")
 
         return self
-
-
-class ValidationResult(BaseModel):
-    """Represents the result of validating a generated SQL query."""
-
-    is_valid: bool = Field(description="Indicates whether the SQL query is valid.")
-    confidence_score: float = Field(
-        description="A calibrated confidence score between 0.0 and 1.0 representing how likely the SQL correctly answers the question.",
-        ge=0.0,
-        le=1.0,
-    )
-    error_message: str | None = Field(
-        default=None,
-        description="Detailed error message if the SQL query is invalid.",
-    )
-
-    @model_validator(mode="after")
-    def validate_error_message(self):
-        if not self.is_valid and not self.error_message:
-            raise ValueError("Error message required when SQL is invalid")
-        return self
-
-
-class ChartConfig(BaseModel):
-    """Represents the configuration for visualizing the SQL query results."""
-
-    chart_type: Literal["bar", "line", "scatter", "pie", "area"] = Field(
-        description="The type of chart to plot."
-    )
-    x: str = Field(description="The column name to be plotted on the X-axis.")
-    y: str = Field(description="The column name to be plotted on the Y-axis.")
-    hue: str | None = Field(
-        default=None,
-        description="An optional column name to use for color encoding (e.g., for grouping).",
-    )
-
-
-class GraphState(BaseModel):
-    """Represents the state used within the LangGraph agent."""
-
-    question: str = Field(
-        description="The original natural language question asked by the user."
-    )
-    db_schema: list[TableSchema] = Field(
-        default_factory=list,
-        description="Database schema, describing the database tables, columns, and data types.",
-    )
-    sql_blueprint: SQLBlueprint | None = Field(
-        default=None,
-        description="The structured plan generated by the AI to answer the question.",
-    )
-    sql: str | None = Field(
-        default=None,
-        description="The compiled SQLAlchemy or raw SQL string for debugging and execution.",
-    )
-    preview: list[dict[str, Any]] | None = Field(  # pyright: ignore[reportExplicitAny]
-        default=None,
-        description="The preview of the SQL query results (limited rows to maximum 10).",
-    )
-    chart_config: ChartConfig | None = Field(
-        default=None,
-        description="Configuration for how to visualize the resulting data.",
-    )
-    error: str | None = Field(
-        default=None,
-        description="A detailed error message if any step in the graph fails.",
-    )
-
-    retry_count: int = Field(
-        default=0,
-        description="The amount of times the agent retries planning SQL query.",
-    )

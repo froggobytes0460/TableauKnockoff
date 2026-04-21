@@ -1,0 +1,10 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent/graph.py:sql_chart_builder"
+  },
+  "entrypoints": {
+    "run_agent": "./agent/graph.py:run_agent"
+  },
+  "env": ".env"
+}

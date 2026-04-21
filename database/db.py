@@ -1,26 +1,18 @@
 """Handle database operations for the application."""
 
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
+
+from sqlalchemy import types
 from sqlalchemy.engine import URL, Engine, create_engine
 from sqlalchemy.schema import MetaData, Table
-from sqlalchemy.sql import ColumnElement, Join, Select, and_, func, or_, select, text
-from sqlalchemy.sql.elements import Label
-from sqlalchemy.types import (
-    DECIMAL,
-    BigInteger,
-    Date,
-    DateTime,
-    Enum,
-    Float,
-    Integer,
-    Numeric,
-    SmallInteger,
-    Time,
-)
+from sqlalchemy.sql.elements import ColumnElement, Label
+from sqlalchemy.sql.expression import Join, Select, select, text
+from sqlalchemy.sql.functions import func
+from sqlalchemy.sql.operators import and_, or_
 from typing_extensions import Doc
 
-from agent.schemas import SQLBlueprint, TableSchema
+from database.schemas import DatabaseCredential, SQLBlueprint, TableSchema
 
 
 class DatabaseHandler:
@@ -37,33 +29,14 @@ class DatabaseHandler:
     @classmethod
     def from_credentials(
         cls,
-        db_type: Annotated[
-            Literal["postgresql", "mysql", "sqlite"], Doc("Different RDBMS.")
-        ],
-        username: Annotated[str, Doc("Database username.")],
-        password: Annotated[str, Doc("Database password.")],
-        host: Annotated[str, Doc("Database host.")],
-        port: Annotated[int, Doc("Database port.")],
-        database: Annotated[str, Doc("Database name.")],
-        **query_kwargs: Annotated[  # pyright: ignore[reportAny]
-            Any,  # pyright: ignore[reportExplicitAny]
-            Doc("Additional query parameters."),
+        db_creds: Annotated[
+            DatabaseCredential, Doc("The credentials to connect to the database.")
         ],
     ):
         """
         Generates a database handler from given credentials.
         """
-        return cls(
-            db_url=cls.make_conninfo(
-                db_type=db_type,
-                username=username,
-                password=password,
-                host=host,
-                port=port,
-                database=database,
-                **query_kwargs,
-            )
-        )
+        return cls(db_url=cls.make_conninfo(db_creds))
 
     def get_schema(self) -> list[TableSchema]:
         self.metadata.reflect(bind=self.engine)
@@ -88,21 +61,22 @@ class DatabaseHandler:
             column_info: list[dict[str, str]] = []
 
             for c in table.columns:
-                match c.type:
-                    case _ if cat_pattern.search(c.name):
+                match (c.type, cat_pattern.search(c.name)):
+                    case (_, match) if match:
                         col_type = "category"
                     case (
-                        Integer()
-                        | BigInteger()
-                        | SmallInteger()
-                        | Float()
-                        | Numeric()
-                        | DECIMAL()
+                        types.Integer()
+                        | types.BigInteger()
+                        | types.SmallInteger()
+                        | types.Float()
+                        | types.Numeric()
+                        | types.DECIMAL(),
+                        _,
                     ):
                         col_type = "numeric"
-                    case Date() | DateTime() | Time():
+                    case (types.Date() | types.DateTime() | types.Time(), _):
                         col_type = "time"
-                    case Enum():
+                    case (types.Enum(), _):
                         col_type = "category"
                     case _:
                         col_type = "text"
@@ -391,36 +365,20 @@ class DatabaseHandler:
 
     @staticmethod
     def make_conninfo(
-        db_type: Annotated[
-            Literal["postgresql", "mysql", "sqlite"], Doc("Different RDBMS.")
-        ],
-        database: Annotated[str, Doc("Database name.")],
-        username: Annotated[str | None, Doc("Database username.")] = None,
-        password: Annotated[str | None, Doc("Database password.")] = None,
-        host: Annotated[str | None, Doc("Database host.")] = None,
-        port: Annotated[int | None, Doc("Database port.")] = None,
-        **query_kwargs: Annotated[  # pyright: ignore[reportAny]
-            Any,  # pyright: ignore[reportExplicitAny]
-            Doc("Additional query parameters."),
+        db_creds: Annotated[
+            DatabaseCredential, Doc("The credentials to connect to the database.")
         ],
     ) -> Annotated[URL, Doc("URL to the database.")]:
         """
         Build a SQLAlchemy connection URL from credentials using SQLAlchemy URL parsing. Supports PostgreSQL, MySQL, and SQLite.
         """
 
-        if db_type in ["postgresql", "mysql"]:
-            return URL.create(
-                drivername=db_type,
-                username=username,
-                password=password,
-                host=host,
-                port=port,
-                database=database,
-                query=query_kwargs,
-            )
-        else:
-            return URL.create(
-                drivername=db_type,
-                database=database,
-                query=query_kwargs,
-            )
+        return URL.create(
+            drivername=db_creds.db_type,
+            username=db_creds.username,
+            password=db_creds.password,
+            host=db_creds.host,
+            port=db_creds.port,
+            database=db_creds.database,
+            query=db_creds.to_query_dict(),
+        )

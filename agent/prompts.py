@@ -216,6 +216,9 @@ SQL Dialect:
 SQL Query:
 {sql_query}
 
+10-row Preview of SQL Result:
+{preview}
+
 ---
 
 ## EVALUATION CRITERIA (score each mentally)
@@ -283,5 +286,36 @@ Examples:
 If valid:
 - error_message MUST be null
 """,
-    input_variables=["question", "sql_dialect", "sql_query"],
+    input_variables=["question", "sql_dialect", "sql_query", "preview"],
+)
+
+CHART_CONFIG_PROMPT = PromptTemplate(
+    template="""You are a chart selection engine.
+
+Given:
+- User question
+- Result columns (a preview of full output)
+
+Choose:
+- chart_type: bar | line | scatter | pie | area
+- x: column name (for pie: used as "names")
+- y: column name (for pie: used as "values")
+- color: optional column name for grouping/stacking
+- title: concise descriptive title for the chart
+
+Rules:
+- Prefer line for time series
+- Prefer bar for categorical comparisons
+- Prefer scatter for numeric vs numeric
+- Avoid pie if more than 6 categories
+- y must be numeric
+
+Return JSON only.
+
+User question: {question}
+
+Result columns:
+{preview}
+""",
+    input_variables=["question", "preview"],
 )

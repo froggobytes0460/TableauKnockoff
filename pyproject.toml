@@ -10,6 +10,7 @@ dependencies = [
     "langchain-groq>=1.1.2",
     "langgraph>=1.1.6",
     "plotly>=6.7.0",
+    "prettytable>=3.17.0",
     "psycopg2-binary>=2.9.11",
     "sqlalchemy>=2.0.49",
     "uvicorn[standard]>=0.27.0",
@@ -20,4 +21,6 @@ dev = [
     "pytest>=8.0.0",
     "httpx>=0.26.0",
     "black>=26.3.1",
+    "langgraph-cli>=0.4.22",
+    "langgraph-cli[inmem]>=0.4.22",
 ]
