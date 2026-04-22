@@ -1,6 +1,7 @@
 """Schemas for database interactions."""
 
 from typing import Literal, override
+from pydantic import SecretStr
 from pydantic.config import ConfigDict
 from pydantic.fields import Field, computed_field
 from pydantic.functional_validators import model_validator
@@ -48,7 +49,7 @@ class DatabaseCredential(BaseModel):
         description="Username for authentication (not required for SQLite).",
     )
 
-    password: str | None = Field(
+    password: SecretStr | None = Field(
         default=None,
         description="Password for authentication (not required for SQLite).",
         json_schema_extra={"format": "password"},

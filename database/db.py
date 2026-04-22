@@ -376,7 +376,9 @@ class DatabaseHandler:
         return URL.create(
             drivername=db_creds.db_type,
             username=db_creds.username,
-            password=db_creds.password,
+            password=(
+                db_creds.password.get_secret_value() if db_creds.password else None
+            ),
             host=db_creds.host,
             port=db_creds.port,
             database=db_creds.database,
