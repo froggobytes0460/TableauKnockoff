@@ -219,6 +219,9 @@ SQL Query:
 10-row Preview of SQL Result:
 {preview}
 
+Databse Schema:
+{db_schema}
+
 ---
 
 ## EVALUATION CRITERIA (score each mentally)
@@ -258,35 +261,10 @@ SQL Query:
 
 ---
 
-## OUTPUT FORMAT (STRICT JSON ONLY)
-
-Return exactly:
-
-{
-  "is_valid": true | false,
-  "error_message": string | null,
-  "confidence_score": float (0.0 to 1.0, must include decimal e.g. 0.85)
-}
-
----
-
-## ERROR MESSAGE RULES
-
-If invalid:
-- be precise
-- mention the exact failure category
-- mention table/column if relevant
-- no vague statements like "query is wrong"
-
-Examples:
-- "Invalid aggregation: SUM(quantity) used without required join to sales table"
-- "Unknown column: product_category does not exist in referenced schema"
-- "Missing grouping for aggregated metric total_quantity"
-
-If valid:
-- error_message MUST be null
+## DECISION RULES
+- Output MUST strictly follow the ValidationResult schema.
 """,
-    input_variables=["question", "sql_dialect", "sql_query", "preview"],
+    input_variables=["question", "sql_dialect", "sql_query", "preview", "db_schema"],
 )
 
 CHART_CONFIG_PROMPT = PromptTemplate(

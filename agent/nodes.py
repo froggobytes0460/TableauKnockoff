@@ -2,7 +2,6 @@
 Node definitions for the agent graph.
 """
 
-from collections import Counter
 from collections.abc import Callable
 import re
 from typing import Annotated, cast
@@ -47,6 +46,8 @@ def plan_node(
     llm_planner = LLMPlanner()
 
     deps, db_config = get_deps(config)
+    db_schema = deps.get_db(db_config).get_schema()
+
     try:
         node_config = config.copy()
         node_config["tags"] = node_config.get("tags", []) + ["plan_node"]
@@ -55,12 +56,13 @@ def plan_node(
             update={
                 "sql_blueprint": llm_planner(
                     state.question,
-                    db_schema=deps.get_db(db_config).get_schema(),
+                    db_schema=db_schema,
                     retry=bool(state.error),
                     previous_blueprint=state.sql_blueprint if state.error else None,
                     error_message=state.error,
                     config=node_config,
                 ),
+                "db_schema": db_schema,
                 "error": None,
                 "success": True,
             },
@@ -107,6 +109,7 @@ def sql_validation_node(
                 sql_dialect=db.engine.dialect.name,
                 sql_query=text_sql_query,
                 preview=preview,
+                db_schema=state.db_schema,
                 config=node_config,
             )
             if not validation_output.is_valid:
@@ -155,38 +158,37 @@ def sql_validation_node(
 
 
 def _rule_based_chart(state: GraphState) -> ChartConfig | None:
-    if not (data := state.preview) or not data[0]:
+    if not (data := state.preview) or not data:
         return None
 
-    cols = list(data[0].keys())
+    sample = data[0]
+    cols = list(sample.keys())
     total = len(data)
 
-    col_counts = {c: Counter[str](r[c] for r in data if r[c] is not None) for c in cols}
-    uniques = {c: len(counts) for c, counts in col_counts.items()}
+    uniques = {c: len({r[c] for r in data if r[c] is not None}) for c in cols}
 
-    sample = data[0]
-    time_cols = [c for c in cols if RE_TIME.search(c)]
-    numeric_cols = [
-        c
-        for c in cols
-        if isinstance(sample[c], (int, float))
-        and not RE_ID.search(c)
-        and uniques[c] > 0
-    ]
+    time_cols: list[str] = []
+    numeric_cols: list[str] = []
+    categorical_cols: list[str] = []
 
-    categorical_cols = [
-        c
-        for c in cols
-        if isinstance(sample[c], str)
-        and c not in time_cols
-        and 1 < uniques[c] <= (total * 0.6)
-    ]
+    for c in cols:
+        if RE_TIME.search(c):
+            time_cols.append(c)
+            continue
+
+        val = sample[c]  # pyright: ignore[reportAny]
+        if isinstance(val, (int, float)) and not RE_ID.search(c):
+            if uniques[c] > 0:
+                numeric_cols.append(c)
+
+        elif isinstance(val, str) and 1 < uniques[c] <= (total * 0.6):
+            categorical_cols.append(c)
 
     fmt_title: Callable[[str], str] = lambda s: s.replace("_", " ").title()
 
     match (time_cols, categorical_cols, numeric_cols):
-        # Area: Positive volume over time
-        case ([t, *_], _, [n, *_]) if all(r[n] >= 0 for r in data if r[n] is not None):
+        # Simple Time Series
+        case ([t, *_], _, [n]) if all(r[n] >= 0 for r in data if r[n] is not None):
             return ChartConfig(
                 chart_type="area",
                 x=t,
@@ -194,8 +196,7 @@ def _rule_based_chart(state: GraphState) -> ChartConfig | None:
                 title=f"Total {fmt_title(n)} over {fmt_title(t)}",
             )
 
-        # Line: Standard time trend
-        case ([t, *_], _, [n, *_]):
+        case ([t, *_], _, [n]):
             return ChartConfig(
                 chart_type="line",
                 x=t,
@@ -203,8 +204,8 @@ def _rule_based_chart(state: GraphState) -> ChartConfig | None:
                 title=f"{fmt_title(n)} Trends over {fmt_title(t)}",
             )
 
-        # Grouped Bar: X-axis + Grouping + Numeric
-        case (_, [cx, cg, *_], [n, *_]) if uniques[cg] <= 10:
+        # Simple Grouped Bar
+        case (_, [cx, cg], [n]) if uniques[cg] <= 10:
             return ChartConfig(
                 chart_type="bar",
                 x=cx,
@@ -213,8 +214,7 @@ def _rule_based_chart(state: GraphState) -> ChartConfig | None:
                 title=f"{fmt_title(n)} by {fmt_title(cx)} and {fmt_title(cg)}",
             )
 
-        # Pie: Simple distribution for small sets
-        case (_, [c, *_], [n, *_]) if 2 <= uniques[c] <= 5:
+        case ([], [c], [n]) if 2 <= uniques[c] <= 5:
             return ChartConfig(
                 chart_type="pie",
                 x=c,
@@ -222,8 +222,7 @@ def _rule_based_chart(state: GraphState) -> ChartConfig | None:
                 title=f"{fmt_title(n)} Distribution by {fmt_title(c)}",
             )
 
-        # Bar: Standard categorical comparison
-        case (_, [c, *_], [n, *_]):
+        case ([], [c], [n]):
             return ChartConfig(
                 chart_type="bar", x=c, y=n, title=f"{fmt_title(n)} by {fmt_title(c)}"
             )

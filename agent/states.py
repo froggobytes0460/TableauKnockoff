@@ -5,7 +5,7 @@ from pydantic.fields import Field
 from pydantic.functional_validators import model_validator
 from pydantic.main import BaseModel
 
-from database.schemas import SQLBlueprint
+from database.schemas import SQLBlueprint, TableSchema
 
 
 class ValidationResult(BaseModel):
@@ -74,11 +74,15 @@ class GraphState(BaseModel):
     )
     sql: str | None = Field(
         default=None,
-        description="The compiled SQLAlchemy or raw SQL string for debugging and execution.",
+        description="The compiled SQLAlchemy query for debugging and execution.",
     )
     preview: list[dict[str, Any]] = Field(  # pyright: ignore[reportExplicitAny]
         default_factory=list,
         description="The preview of the SQL query results (limited rows to maximum 10).",
+    )
+    db_schema: list[TableSchema] = Field(
+        default_factory=list,
+        description="The database schema information used for SQL generation and validation.",
     )
     chart_config: ChartConfig | None = Field(
         default=None,
@@ -109,10 +113,6 @@ class AgentOutput(BaseModel):
         default=None,
         description="The compiled SQLAlchemy or raw SQL string for debugging and execution.",
     )
-    preview: list[dict[str, Any]] = Field(  # pyright: ignore[reportExplicitAny]
-        default_factory=list,
-        description="The preview of the SQL query results (limited rows to maximum 10).",
-    )
     chart_config: ChartConfig | None = Field(
         default=None,
         description="Configuration for how to visualize the resulting data.",
@@ -131,9 +131,9 @@ class AgentOutput(BaseModel):
             case (False, False):
                 raise ValueError("Error message required when success is False")
 
-            case (True, False) if not all([self.sql, self.preview, self.chart_config]):
+            case (True, False) if not all([self.sql, self.chart_config]):
                 raise ValueError(
-                    "SQL, preview, and chart_config must be provided when success is True"
+                    "SQL and chart_config must be provided when success is True"
                 )
 
             case _:
