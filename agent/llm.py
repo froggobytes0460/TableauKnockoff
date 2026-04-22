@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig, RunnableSerializable
 from langchain_groq import ChatGroq
 from prettytable import PrettyTable, TableStyle
+from pydantic import SecretStr
 from typing_extensions import Doc
 
 from agent.prompts import (
@@ -25,7 +26,8 @@ from database.schemas import SQLBlueprint, TableSchema
 if not (path := Path(".env").resolve()).exists():
     raise FileNotFoundError(f"Missing .env file at path: {path}")
 
-_ = load_dotenv(path)
+if not load_dotenv(path):
+    raise EnvironmentError(f"Failed to load .env file at path: {path}") from None
 
 MODEL_ID = "openai/gpt-oss-120b"
 
@@ -39,10 +41,13 @@ class BaseLLM:
             str | None, Doc(f"The API key for accessing Groq API.")
         ] = None,
     ):
-        resolved_api_key: str | None = api_key if api_key else os.getenv("GROQ_API_KEY")
+        if not (env_key := os.getenv("GROQ_API_KEY")) and not api_key:
+            raise ValueError(
+                "Groq API key must be provided either through the GROQ_API_KEY environment variable or as an argument."
+            )
         self.llm: ChatGroq = ChatGroq(
             model=MODEL_ID,
-            api_key=resolved_api_key,  # pyright: ignore[reportArgumentType]
+            api_key=SecretStr(str(api_key)) if not env_key else None,
             temperature=0.0,
             max_retries=2,
             model_kwargs={"response_format": {"type": "json_object"}},
