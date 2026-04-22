@@ -216,7 +216,9 @@ class LLMValidator(BaseLLM):
                 Any, ValidationResult  # pyright: ignore[reportExplicitAny]
             ],
             self.llm.with_structured_output(  # pyright: ignore[reportUnknownMemberType]
-                ValidationResult, method="json_mode"
+                ValidationResult,
+                method="json_schema",
+                strict=True,
             ),
         )
         self.llm_chain = VALIDATOR_PROMPT | structured_llm
@@ -274,7 +276,7 @@ class LLMChart(BaseLLM):
                 Any, ChartConfig  # pyright: ignore[reportExplicitAny]
             ],
             self.llm.with_structured_output(  # pyright: ignore[reportUnknownMemberType]
-                ChartConfig, method="json_mode"
+                ChartConfig, method="json_schema", strict=True
             ),
         )
 
@@ -293,7 +295,7 @@ class LLMChart(BaseLLM):
                 "Optional configuration passed by agent invokation to manage runnables"
             ),
         ] = None,
-    ):
+    ) -> ChartConfig:
         return self.llm_chain.invoke(
             input={
                 "question": question,

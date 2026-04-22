@@ -79,33 +79,7 @@ User question:
 - If a metric is present and no explicit sort is requested:
   - Sort by the first metric alias in descending order
 - "order_by" MUST NOT be empty when metrics are present
-
-### 10. Output format (STRICT JSON ONLY)
-Return EXACTLY this structure:
-
-"dimensions": list of {{"table": "string", "column": "string"}}
-"metrics": list of {{"column": {{"table": "string", "column": "string"}}, "aggregation": "string", "alias": "string|null"}}
-"filters": list of {{"column": {{"table": "string", "column": "string"}}, "operator": "string", "value": "any"}}
-"order_by": list of {{"column": {{"table": "string", "column": "string"}} OR "string", "sort_type": "asc|desc"}}
-"limit": integer
-
-- Output must be valid JSON parsable by Python json.loads()
-- Do NOT include explanations, markdown, or extra text
-
-## VALID EXAMPLE
-{{
-  "dimensions": [{{"table": "product", "column": "product_category"}}],
-  "metrics": [{{"column": {{"table": "sales", "column": "quantity"}}, "aggregation": "sum", "alias": "total_quantity"}}],
-  "filters": [],
-  "order_by": [{{"column": "total_quantity", "sort_type": "desc"}}],
-  "limit": 100
-}}
-
-## INVALID EXAMPLE (DO NOT DO THIS)
-{{
-  "dimensions": ["product_category"],
-  "metrics": [{{"column": "quantity", "aggregation": "sum"}}]
-}}
+- The output MUST strictly conform to the provided JSON schema. Do not include extra fields.
 """,
     input_variables=["db_schema", "user_question"],
 )
@@ -173,23 +147,11 @@ Error:
 
 ---
 
-## OUTPUT
-
-Return ONLY valid JSON with keys:
-"dimensions": list of {{"table": "string", "column": "string"}}
-"metrics": list of {{"column": {{"table": "string", "column": "string"}}, "aggregation": "string", "alias": "string|null"}}
-"filters": list of {{"column": {{"table": "string", "column": "string"}}, "operator": "string", "value": "any"}}
-"order_by": list of {{"column": {{"table": "string", "column": "string"}} OR "string", "sort_type": "asc|desc"}}
-"limit": integer
-
-## VALID EXAMPLE
-{{
-  "dimensions": [{{"table": "product", "column": "product_category"}}],
-  "metrics": [{{"column": {{"table": "sales", "column": "quantity"}}, "aggregation": "sum", "alias": "total_quantity"}}],
-  "filters": [],
-  "order_by": [{{"column": "total_quantity", "sort_type": "desc"}}],
-  "limit": 100
-}}
+### Default ordering (IMPORTANT)
+- If a metric is present and no explicit sort is requested:
+  - Sort by the first metric alias in descending order
+- "order_by" MUST NOT be empty when metrics are present
+- The output MUST strictly conform to the provided JSON schema. Do not include extra fields.
 """,
     input_variables=["db_schema", "user_question", "previous_blueprint", "error"],
 )
@@ -288,7 +250,7 @@ Rules:
 - Avoid pie if more than 6 categories
 - y must be numeric
 
-Return JSON only.
+ - Output MUST strictly conform to the ChartConfig schema.
 
 User question: {question}
 
