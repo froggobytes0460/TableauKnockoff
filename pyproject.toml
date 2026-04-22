@@ -9,6 +9,7 @@ dependencies = [
     "fastui>=0.9.0",
     "langchain-groq>=1.1.2",
     "langgraph>=1.1.6",
+    "pandas>=3.0.2",
     "plotly>=6.7.0",
     "prettytable>=3.17.0",
     "psycopg2-binary>=2.9.11",
