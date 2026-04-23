@@ -6,18 +6,28 @@ from typing import Annotated
 from typing_extensions import Doc
 
 from database import DatabaseHandler
-from database.schemas import DatabaseCredential
+from database import DatabaseCredential
+
+
+@lru_cache(maxsize=32)
+def _get_db(
+    db_creds: Annotated[
+        DatabaseCredential, Doc("The credentials to connect to the database.")
+    ],
+) -> DatabaseHandler:
+    """Gets a cached database handler based on the provided credentials, if existing, otherwise creates a new one."""
+    return DatabaseHandler.from_credentials(db_creds)
 
 
 class DependencyFactory:
     def __init__(self):
         pass
 
-    @lru_cache(maxsize=32)
     def get_db(
         self,
         db_creds: Annotated[
             DatabaseCredential, Doc("The credentials to connect to the database.")
         ],
     ) -> DatabaseHandler:
-        return DatabaseHandler.from_credentials(db_creds)
+        """Wrapper for cached database handler."""
+        return _get_db(db_creds)  # pyright: ignore[reportArgumentType]

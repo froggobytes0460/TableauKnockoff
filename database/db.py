@@ -36,7 +36,19 @@ class DatabaseHandler:
         """
         Generates a database handler from given credentials.
         """
-        return cls(db_url=cls.make_conninfo(db_creds))
+        return cls(
+            db_url=URL.create(
+                drivername=db_creds.db_type,
+                username=db_creds.username,
+                password=(
+                    db_creds.password.get_secret_value() if db_creds.password else None
+                ),
+                host=db_creds.host,
+                port=db_creds.port,
+                database=db_creds.database,
+                query=db_creds.to_query_dict(),
+            )
+        )
 
     def get_schema(self) -> list[TableSchema]:
         self.metadata.reflect(bind=self.engine)
@@ -362,25 +374,3 @@ class DatabaseHandler:
     ) -> Annotated[str, Doc("The SQL query in text-form.")]:
         """Compiles the SQLAlchemy statement to a raw SQL string."""
         return stmt.compile(self.engine, compile_kwargs={"literal_binds": True}).string
-
-    @staticmethod
-    def make_conninfo(
-        db_creds: Annotated[
-            DatabaseCredential, Doc("The credentials to connect to the database.")
-        ],
-    ) -> Annotated[URL, Doc("URL to the database.")]:
-        """
-        Build a SQLAlchemy connection URL from credentials using SQLAlchemy URL parsing. Supports PostgreSQL, MySQL, and SQLite.
-        """
-
-        return URL.create(
-            drivername=db_creds.db_type,
-            username=db_creds.username,
-            password=(
-                db_creds.password.get_secret_value() if db_creds.password else None
-            ),
-            host=db_creds.host,
-            port=db_creds.port,
-            database=db_creds.database,
-            query=db_creds.to_query_dict(),
-        )

@@ -14,7 +14,7 @@ from typing_extensions import Doc
 from agent.deps import DependencyFactory
 from agent.llm import LLMChart, LLMPlanner, LLMValidator
 from agent.states import ChartConfig, GraphState
-from database.schemas import DatabaseCredential
+from database import DatabaseCredential
 
 RE_TIME = re.compile(r"date|time|year|timestamp|(_dt|^dt$)|month|day", re.I)
 RE_ID = re.compile(r"id|_id|uuid|pk|key", re.I)

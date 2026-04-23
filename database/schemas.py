@@ -1,6 +1,6 @@
 """Schemas for database interactions."""
 
-from typing import Literal, override
+from typing import Literal
 from pydantic import SecretStr
 from pydantic.config import ConfigDict
 from pydantic.fields import Field, computed_field
@@ -22,10 +22,6 @@ class QueryParam(BaseModel):
     value: str | int | float | bool = Field(
         description="The value of the query parameter. Must be JSON-serializable and URL-safe."
     )
-
-    @override
-    def __hash__(self) -> int:
-        return hash((type(self), *self.__dict__.values()))
 
 
 class DatabaseCredential(BaseModel):
@@ -101,10 +97,6 @@ class DatabaseCredential(BaseModel):
     def to_query_dict(self) -> dict[str, str]:
         """Convert query params into dict for SQLAlchemy URL."""
         return {param.key: str(param.value) for param in self.query}
-
-    @override
-    def __hash__(self) -> int:
-        return hash((type(self), *self.__dict__.values()))
 
 
 class TableSchema(BaseModel):
