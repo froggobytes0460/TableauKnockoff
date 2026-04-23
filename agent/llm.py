@@ -63,14 +63,11 @@ class BaseLLM:
         if not data:
             return ""
 
-        table = PrettyTable()
-        table.field_names = list(data[0].keys())
-
-        for entry in data:
-            table.add_row(list(entry.values()))
-
+        table = PrettyTable(field_names=list(data[0].keys()), align="l")
         table.set_style(TableStyle.MARKDOWN)
-        return str(table.get_string())  # pyright: ignore[reportUnknownMemberType]
+        table.add_rows([list(entry.values()) for entry in data])
+
+        return table.get_string()  # pyright: ignore[reportUnknownMemberType]
 
     @staticmethod
     def format_schema(
@@ -188,7 +185,7 @@ class LLMPlanner(BaseLLM):
                 input={
                     "db_schema": self.format_schema(db_schema),
                     "user_question": question,
-                    "previous_blueprint": previous_blueprint.model_dump(),
+                    "previous_blueprint": previous_blueprint.model_dump_json(),
                     "error": error_message,
                 },
                 config=config,
