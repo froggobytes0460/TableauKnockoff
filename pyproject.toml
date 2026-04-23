@@ -25,3 +25,10 @@ dev = [
     "langgraph-cli>=0.4.22",
     "langgraph-cli[inmem]>=0.4.22",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent", "database"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
