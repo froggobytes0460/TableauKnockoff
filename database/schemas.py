@@ -71,7 +71,7 @@ class DatabaseCredential(BaseModel):
 
     @model_validator(mode="after")
     def validate_by_db_type(self):
-        if self.db_type in {"postgresql", "mysql"}:
+        if self.requires_network:
             missing = [
                 field for field in ["host", "port"] if getattr(self, field) is None
             ]

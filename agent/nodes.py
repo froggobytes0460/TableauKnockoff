@@ -156,7 +156,7 @@ def sql_validation_node(
 
 
 def _rule_based_chart(state: GraphState) -> ChartConfig | None:
-    if not (data := state.preview) or not data:
+    if not (data := state.preview):
         return None
 
     sample = data[0]
@@ -243,9 +243,7 @@ def chart_node(
     config: RunnableConfig,
 ) -> Command[str]:
     """Generates chart configuration using rules first, then LLM fallback."""
-    chart = _rule_based_chart(state)
-
-    if chart:
+    if chart := _rule_based_chart(state):
         return Command(
             goto=END,
             update={
