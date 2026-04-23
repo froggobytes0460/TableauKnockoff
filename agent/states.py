@@ -107,7 +107,8 @@ class AgentInput(BaseModel):
 
 class AgentOutput(BaseModel):
     success: bool = Field(
-        description="Whether the agent successfully produced a valid result."
+        default=False,
+        description="Whether the agent successfully produced a valid result.",
     )
     sql: str | None = Field(
         default=None,
@@ -124,6 +125,8 @@ class AgentOutput(BaseModel):
 
     @model_validator(mode="after")
     def validate_success(self):
+        if not self.success and self.error is None:
+            return self
         match (self.success, bool(self.error)):
             case (True, True):
                 raise ValueError("Error message must be null when success is True")

@@ -64,7 +64,6 @@ def plan_node(
                 ),
                 "db_schema": db_schema,
                 "error": None,
-                "success": True,
             },
         )
     except Exception as e:
@@ -138,7 +137,6 @@ def sql_validation_node(
                     "preview": preview,
                     "sql": text_sql_query,
                     "error": None,
-                    "success": True,
                 },
             )
 
@@ -248,7 +246,12 @@ def chart_node(
     chart = _rule_based_chart(state)
 
     if chart:
-        return Command(goto=END, update={"chart_config": chart, "success": True})
+        return Command(
+            goto=END,
+            update={
+                "chart_config": chart,
+            },
+        )
 
     node_config = config.copy()
     node_config["tags"] = node_config.get("tags", []) + ["chart_node"]

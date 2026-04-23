@@ -45,23 +45,17 @@ def run_agent(
     thread_id: Annotated[str, Doc("The thread ID for the agent execution.")],
 ) -> Annotated[AgentOutput, Doc("The output from the agent.")]:
     config = RunnableConfig(
-        tags=["sql-chart-agent"],
-        metadata={
-            "use_case": "sql_generation",
-            "env": "dev",
-        },
         configurable={
             "thread_id": thread_id,
             "deps": DependencyFactory(),
             "db_config": db_config,
-        },
-        run_name="sql_chart_pipeline",
+        }
     )
 
-    return sql_chart_builder.invoke(  # pyright: ignore[reportUnknownMemberType, reportReturnType]
-        input=input,
-        config=config,
+    raw_output = sql_chart_builder.invoke(  # pyright: ignore[reportUnknownMemberType]
+        input=input, config=config, version="v2"
     )
+    return AgentOutput.model_validate(raw_output.value)
 
 
 # NOTE: The following main block is for demonstration and testing purposes. In a production environment, this module would typically be imported and the `run_agent` function would be called from an API endpoint or another part of the application.
@@ -81,4 +75,4 @@ if __name__ == "__main__":
     )
     set_debug(True)
     output = run_agent(input=input, db_config=_db_config, thread_id="test_thread")
-    print(output)
+    print(output.model_dump_json(indent=2))
