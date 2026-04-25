@@ -17,7 +17,7 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "httpx>=0.26.0",
@@ -25,6 +25,9 @@ dev = [
     "langgraph-cli>=0.4.22",
     "langgraph-cli[inmem]>=0.4.22",
 ]
+
+[tool.uv]
+default-groups = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent", "database"]

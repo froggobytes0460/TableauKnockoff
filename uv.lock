@@ -1346,7 +1346,7 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "black" },
     { name = "httpx" },
@@ -1356,23 +1356,26 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = ">=26.3.1" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "fastui", specifier = ">=0.9.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "langchain-groq", specifier = ">=1.1.2" },
     { name = "langgraph", specifier = ">=1.1.6" },
-    { name = "langgraph-cli", marker = "extra == 'dev'", specifier = ">=0.4.22" },
-    { name = "langgraph-cli", extras = ["inmem"], marker = "extra == 'dev'", specifier = ">=0.4.22" },
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "plotly", specifier = ">=6.7.0" },
     { name = "prettytable", specifier = ">=3.17.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black", specifier = ">=26.3.1" },
+    { name = "httpx", specifier = ">=0.26.0" },
+    { name = "langgraph-cli", specifier = ">=0.4.22" },
+    { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.4.22" },
+    { name = "pytest", specifier = ">=8.0.0" },
+]
 
 [[package]]
 name = "tenacity"
