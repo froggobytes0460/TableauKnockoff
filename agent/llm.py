@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from string.templatelib import Interpolation, Template
 from typing import Annotated, Any, cast
+import re
 
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig, RunnableSerializable
@@ -30,6 +31,25 @@ if not load_dotenv(path):
     raise EnvironmentError(f"Failed to load .env file at path: {path}") from None
 
 MODEL_ID = "openai/gpt-oss-120b"
+
+
+def sanitize_input(text: str) -> str:
+    """Remove unsafe characters and limit length.
+
+    - Strip control characters (\x00-\x1f, \x7f)
+    - Remove backticks, braces, and dollar signs which can alter prompt templates
+    - Collapse whitespace and trim
+    - Truncate to 500 characters (adjustable)
+    """
+    # Remove control characters
+    text = re.sub(r"[\x00-\x1F\x7F]", "", text)
+    # Remove dangerous symbols
+    for ch in ["`", "{", "}", "$"]:
+        text = text.replace(ch, "")
+    # Collapse whitespace and trim
+    text = " ".join(text.split()).strip()
+    # Enforce length limit
+    return text[:500]
 
 
 class BaseLLM:
@@ -179,6 +199,8 @@ class LLMPlanner(BaseLLM):
             ),
         ] = None,
     ) -> SQLBlueprint:
+        # Sanitize user question to prevent prompt injection
+        question = sanitize_input(question)
         """Generate SQL blueprint from the question and database schema."""
         if retry and previous_blueprint:
             return self.retry_planner_chain.invoke(
@@ -245,6 +267,8 @@ class LLMValidator(BaseLLM):
             ),
         ] = None,
     ) -> ValidationResult:
+        # Sanitize user question before validation
+        question = sanitize_input(question)
         """Validate generated SQL query against the question and database schema."""
         return self.llm_chain.invoke(
             input={
@@ -298,6 +322,8 @@ class LLMChart(BaseLLM):
             ),
         ] = None,
     ) -> ChartConfig:
+        # Sanitize user question before chart generation
+        question = sanitize_input(question)
         return self.llm_chain.invoke(
             input={
                 "question": question,
