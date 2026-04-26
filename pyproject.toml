@@ -30,7 +30,7 @@ dev = [
 default-groups = []
 
 [tool.hatch.build.targets.wheel]
-packages = ["agent", "database"]
+packages = ["agent", "database", "web"]
 
 [build-system]
 requires = ["hatchling"]

@@ -5,9 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common Development Commands
 
 - `uv sync` - Install dependencies
-- `uv run python main.py` - Start development server
-- `uv run python -m pytest` - Run all tests
-- `uv run python -m pytest tests/<file>` - Run specific test file
+- `uv run python main.py` - Start development server (uvicorn)
 - `uv run fastapi dev main.py` - Start FastAPI dev server
 
 ## High-Level Architecture
@@ -37,10 +35,35 @@ This is a **FastAPI application** that uses **LangGraph** to build an AI agent f
 
 ### Agent Flow
 
-```plaintext
-User Question → plan_node → sql_validation_node → chart_node → Output
-                     ↓              ↓
-                  (retry ≤3)   (retry ≤3)
+```mermaid
+  flowchart TD
+      %% Node definitions with improved shapes
+      A(["User Question"]):::entry
+      B(["plan_node"]):::process
+      C(["sql_validation_node"]):::process
+      D(["chart_node"]):::process
+      E(["Output"]):::output
+
+      %% Success paths (labeled)
+      A -->|"submit question"| B
+      B -->|"blueprint generated"| C
+      C -->|"validation passed (≥0.85)"| D
+      D -->|"chart configured"| E
+
+      %% Retry loops (labeled)
+      B -->|"retry ≤ 3"| B
+      C -->|"retry ≤ 3"| C
+
+      %% Styling
+      classDef entry fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#01579b;
+      classDef process fill:#f0f4c3,stroke:#827717,stroke-width:2px,color:#827717;
+      classDef output fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#2e7d32;
+      linkStyle 0 stroke:#2e7d32,stroke-width:2px;
+      linkStyle 1 stroke:#2e7d32,stroke-width:2px;
+      linkStyle 2 stroke:#2e7d32,stroke-width:2px;
+      linkStyle 3 stroke:#2e7d32,stroke-width:2px;
+      linkStyle 4 stroke:#d32f2f,stroke-width:2px,stroke-dasharray:5,5;
+      linkStyle 5 stroke:#d32f2f,stroke-width:2px,stroke-dasharray:5,5;
 ```
 
 1. **Plan Node**: LLM generates `SQLBlueprint` (dimensions, metrics, filters, order_by, limit) from natural language + DB schema
