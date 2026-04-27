@@ -11,11 +11,12 @@ from database import DatabaseCredential
 
 @lru_cache(maxsize=32)
 def _get_db(
-    db_creds: Annotated[
-        DatabaseCredential, Doc("The credentials to connect to the database.")
+    db_creds_json: Annotated[
+        str, Doc("Serialized credentials as JSON string to connect to the database.")
     ],
 ) -> DatabaseHandler:
     """Gets a cached database handler based on the provided credentials, if existing, otherwise creates a new one."""
+    db_creds = DatabaseCredential.model_validate_json(db_creds_json)
     return DatabaseHandler.from_credentials(db_creds)
 
 
@@ -30,4 +31,4 @@ class DependencyFactory:
         ],
     ) -> DatabaseHandler:
         """Wrapper for cached database handler."""
-        return _get_db(db_creds)  # pyright: ignore[reportArgumentType]
+        return _get_db(db_creds.model_dump_json())
