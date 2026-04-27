@@ -2,4 +2,4 @@
 
 from fastapi import APIRouter
 
-ui_router = APIRouter(prefix="ui/")
+ui_router = APIRouter(prefix="/ui")
