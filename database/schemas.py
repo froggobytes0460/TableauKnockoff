@@ -6,6 +6,7 @@ from pydantic.config import ConfigDict
 from pydantic.fields import Field, computed_field
 from pydantic.functional_validators import model_validator
 from pydantic.main import BaseModel
+from pydantic import field_serializer
 
 
 class QueryParam(BaseModel):
@@ -93,6 +94,10 @@ class DatabaseCredential(BaseModel):
     def requires_network(self) -> bool:
         """Computed property instead of a mutated private attribute."""
         return self.db_type in {"postgresql", "mysql"}
+
+    @field_serializer("password")
+    def _serialize_password(self, v: SecretStr | None):
+        return v.get_secret_value() if v else None
 
     def to_query_dict(self) -> dict[str, str]:
         """Convert query params into dict for SQLAlchemy URL."""

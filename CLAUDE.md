@@ -75,13 +75,15 @@ This is a **FastAPI application** that uses **LangGraph** to build an AI agent f
 - **State Management**: `GraphState` carries `question`, `sql_blueprint`, `sql`, `preview`, `db_schema`, `chart_config`, `error`, `retry_count` through the graph
 - **Dependency Injection**: `DependencyFactory` passed via `config.configurable["deps"]`, database credentials via `config.configurable["db_config"]`
 - **Caching**: `DatabaseHandler` instances cached via `lru_cache` in `deps.py`
+- **Credential Serialization**: Database credentials passed as serialized JSON strings (`DatabaseCredential.model_dump_json()`) through graph config to avoid Pydantic serialization issues with `SecretStr`
+- **Password Serialization**: `DatabaseCredential.password` uses `@field_serializer` to expose secret values when needed
 - **Schema Introspection**: `DatabaseHandler.get_schema()` returns `list[TableSchema]` with inferred types (numeric, category, time, text)
 - **SQL Blueprint Pattern**: AI generates structured `SQLBlueprint` → `DatabaseHandler.generate_sql_query()` converts to SQLAlchemy `Select`
 
 ## Database Support
 
 - **PostgreSQL**, **MySQL**, **SQLite** via SQLAlchemy
-- `DatabaseCredential` uses `SecretStr` for passwords
+- `DatabaseCredential` uses `SecretStr` for passwords (serialized to JSON for graph passing)
 - Network databases require `host` + `port`; SQLite must not have them
 - Query parameters supported via `QueryParam` tuple
 
@@ -92,3 +94,31 @@ This is a **FastAPI application** that uses **LangGraph** to build an AI agent f
 - Visualization uses Plotly (chart config only; rendering elsewhere)
 - `.env` file required at project root (loaded in `graph.py`)
 - `pyproject.toml` uses hatchling build system; packages: `agent`, `database`
+
+## Project File Structure
+
+```text
+├── CLAUDE.md
+├── README.md
+├── agent
+│   ├── __init__.py
+│   ├── deps.py
+│   ├── graph.py
+│   ├── llm.py
+│   ├── nodes.py
+│   ├── prompts.py
+│   └── states.py
+├── database
+│   ├── __init__.py
+│   ├── db.py
+│   └── schemas.py
+├── langgraph.json
+├── main.py
+├── pyproject.toml
+├── uv.lock
+└── web
+    ├── __init__.py
+    ├── api.py
+    ├── tags.py
+    └── ui.py
+```
