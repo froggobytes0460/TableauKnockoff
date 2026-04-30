@@ -2,6 +2,7 @@
 Compilation of agent graph from nodes.
 """
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Annotated
@@ -37,7 +38,7 @@ sql_chart_builder = graph.compile(  # pyright: ignore[reportUnknownMemberType]
 )
 
 
-def run_agent(
+async def run_agent(
     input: Annotated[AgentInput, Doc("The input question for the agent.")],
     db_config: Annotated[
         DatabaseCredential, Doc("The credentials to connect to the database.")
@@ -52,8 +53,10 @@ def run_agent(
         }
     )
 
-    raw_output = sql_chart_builder.invoke(  # pyright: ignore[reportUnknownMemberType]
-        input=input, config=config, version="v2"
+    raw_output = (
+        await sql_chart_builder.ainvoke(  # pyright: ignore[reportUnknownMemberType]
+            input=input, config=config, version="v2"
+        )
     )
     return AgentOutput.model_validate(raw_output.value)
 
@@ -74,5 +77,8 @@ if __name__ == "__main__":
         question="Total quantity of sales per store ID.",
     )
     set_debug(True)
-    output = run_agent(input=input, db_config=_db_config, thread_id="test_thread")
-    print(output.model_dump_json(indent=2))
+    print(
+        asyncio.run(
+            run_agent(input=input, db_config=_db_config, thread_id="test_thread")
+        ).model_dump_json(indent=2)
+    )
