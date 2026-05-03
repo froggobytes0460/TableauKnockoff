@@ -315,7 +315,11 @@ class DatabaseHandler:
                         raise ValueError("IN operator requires list value")
                     filters.append(col.in_(f.value))
 
-        return stmt.where(and_(*filters)) if filters else stmt
+        if not filters:
+            return stmt
+        if len(filters) == 1:
+            return stmt.where(filters[0])
+        return stmt.where(and_(*filters))
 
     def _apply_order_by(
         self,

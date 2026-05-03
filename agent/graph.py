@@ -3,25 +3,24 @@ Compilation of agent graph from nodes.
 """
 
 import asyncio
-import os
-from pathlib import Path
 from typing import Annotated
-from dotenv import load_dotenv
 from langgraph.graph import StateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import RunnableConfig
 from typing_extensions import Doc
 
-from agent.deps import DependencyFactory
-from agent.nodes import chart_node, plan_node, sql_validation_node
-from agent.states import AgentInput, AgentOutput, GraphState
+from config import settings
+
+from .deps import DependencyFactory
 from database import DatabaseCredential
 
-if not (path := Path(".env").resolve()).exists():
-    raise FileNotFoundError(f"Missing .env file at path: {path}")
+from .nodes import (
+    chart_node,
+    plan_node,
+    sql_validation_node,
+)
 
-if not load_dotenv(path):
-    raise EnvironmentError(f"Failed to load .env file at path: {path}") from None
+from .states import AgentInput, AgentOutput, GraphState
 
 graph = StateGraph(GraphState, input_schema=AgentInput, output_schema=AgentOutput)
 
@@ -65,29 +64,22 @@ async def run_agent(
 if __name__ == "__main__":
     from langchain_core.globals import set_debug
 
-    input = AgentInput(
-        question="Total quantity of sales per store ID.",
-    )
     set_debug(True)
     print(
         asyncio.run(
             run_agent(
-                input=input,
+                input=AgentInput(
+                    question="Total quantity of sales per store ID.",
+                ),
                 db_config=DatabaseCredential(
-                    db_type="postgresql",
-                    database=os.getenv(
-                        "DB_NAME"
-                    ),  # pyright: ignore[reportArgumentType]
-                    username=os.getenv("DB_USER"),
-                    password=os.getenv(
-                        "DB_PASSWORD"
-                    ),  # pyright: ignore[reportArgumentType]
-                    host=os.getenv("DB_HOST"),
-                    port=int(
-                        os.getenv("DB_PORT")  # pyright: ignore[reportArgumentType]
-                    ),
+                    db_type=settings.db.type,
+                    database=settings.db.name,
+                    username=settings.db.username,
+                    password=settings.db.password,
+                    host=settings.db.host,
+                    port=settings.db.port,
                 ),
                 thread_id="test_thread",
             )
-        ).model_dump_json(indent=2)
+        ).model_dump_json(indent=4)
     )

@@ -1,9 +1,5 @@
 """API calls the UI may make."""
 
-import os
-from pathlib import Path
-
-from dotenv import load_dotenv
 from fastapi import status
 from fastapi.exceptions import HTTPException
 from fastapi.params import Security
@@ -13,17 +9,12 @@ from pydantic import BaseModel
 from typing_extensions import Annotated, Doc
 
 from agent import AgentInput, AgentOutput, run_agent
+from config import settings
 from database import DatabaseCredential, DatabaseHandler
-from .tags import APITag
-
-if not (path := Path(".env").resolve()).exists():
-    raise FileNotFoundError(f"Missing .env file at path: {path}")
-
-if not load_dotenv(path):
-    raise EnvironmentError(f"Failed to load .env file at path: {path}") from None
+from web.tags import APITag
 
 api_key_header = APIKeyHeader(
-    name="X_API_KEY", description="API Key Header", auto_error=True
+    name="X-API-KEY", description="API Key Header", auto_error=True
 )
 
 
@@ -38,12 +29,12 @@ def verify_api_key(
     api_key: Annotated[str, Security(api_key_header)],
 ):
     """Verify the API key from the Authorization header."""
-    if not (internal_api_key := os.getenv("INTERNAL_API_KEY")):
+    if not settings.internal_api_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal API key not configured",
         )
-    if api_key != internal_api_key:
+    if api_key != settings.internal_api_key.get_secret_value():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
         )
@@ -84,5 +75,11 @@ async def submit_question(
 def get_chart_data(
     request: Annotated[ChartDataRequest, Doc("The request body for this endpoint.")],
 ):
-    db = DatabaseHandler.from_credentials(request.db_config)
-    return db.execute_query(request.sql_query)
+    try:
+        db = DatabaseHandler.from_credentials(request.db_config)
+        return db.execute_query(request.sql_query)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database query failed: {str(e)}",
+        )

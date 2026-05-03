@@ -161,13 +161,12 @@ def _rule_based_chart(state: GraphState) -> ChartConfig | None:
 
     sample = data[0]
     cols = list(sample.keys())
-    total = len(data)
 
     uniques = {c: len({r[c] for r in data if r[c] is not None}) for c in cols}
 
     time_cols: list[str] = []
     numeric_cols: list[str] = []
-    categorical_cols: list[str] = []
+    string_cols: list[str] = []
 
     for c in cols:
         if RE_TIME.search(c):
@@ -179,61 +178,61 @@ def _rule_based_chart(state: GraphState) -> ChartConfig | None:
             if uniques[c] > 0:
                 numeric_cols.append(c)
 
-        elif isinstance(val, str) and 1 < uniques[c] <= (total * 0.6):
-            categorical_cols.append(c)
+        elif isinstance(val, str):
+            string_cols.append(c)
 
     fmt_title: Callable[[str], str] = lambda s: s.replace("_", " ").title()
 
-    match (time_cols, categorical_cols, numeric_cols):
-        # Simple Time Series
-        case ([t, *_], _, [n]) if all(r[n] >= 0 for r in data if r[n] is not None):
-            return ChartConfig(
-                chart_type="area",
-                x=t,
-                y=n,
-                title=f"Total {fmt_title(n)} over {fmt_title(t)}",
-            )
-
-        case ([t, *_], _, [n]):
+    # Rule-based chart selection via match-case on column lists
+    match (time_cols, numeric_cols, string_cols):
+        # Time series: at least one time column and exactly one numeric column
+        case (t, [n], _) if t:
+            col_time = t[0]
+            if all(r[n] >= 0 for r in data if r[n] is not None):
+                return ChartConfig(
+                    chart_type="area",
+                    x=col_time,
+                    y=n,
+                    title=f"Total {fmt_title(n)} over {fmt_title(col_time)}",
+                )
             return ChartConfig(
                 chart_type="line",
-                x=t,
+                x=col_time,
                 y=n,
-                title=f"{fmt_title(n)} Trends over {fmt_title(t)}",
+                title=f"{fmt_title(n)} Trends over {fmt_title(col_time)}",
             )
-
-        # Simple Grouped Bar
-        case (_, [cx, cg], [n]) if uniques[cg] <= 10:
+        # Categorical + numeric
+        case (_, n, s) if s and n:
+            col_str = s[0]
+            col_num = n[0]
+            if "quantity" in col_num.lower():
+                return ChartConfig(
+                    chart_type="bar",
+                    x=col_str,
+                    y=col_num,
+                    title=f"{fmt_title(col_num)} by {fmt_title(col_str)}",
+                )
+            if len(s) == 1 and 2 <= uniques[col_str] <= 5:
+                return ChartConfig(
+                    chart_type="pie",
+                    x=col_str,
+                    y=col_num,
+                    title=f"{fmt_title(col_num)} Distribution by {fmt_title(col_str)}",
+                )
             return ChartConfig(
                 chart_type="bar",
-                x=cx,
-                y=n,
-                color=cg,
-                title=f"{fmt_title(n)} by {fmt_title(cx)} and {fmt_title(cg)}",
+                x=col_str,
+                y=col_num,
+                title=f"{fmt_title(col_num)} by {fmt_title(col_str)}",
             )
-
-        case ([], [c], [n]) if 2 <= uniques[c] <= 5:
-            return ChartConfig(
-                chart_type="pie",
-                x=c,
-                y=n,
-                title=f"{fmt_title(n)} Distribution by {fmt_title(c)}",
-            )
-
-        case ([], [c], [n]):
-            return ChartConfig(
-                chart_type="bar", x=c, y=n, title=f"{fmt_title(n)} by {fmt_title(c)}"
-            )
-
-        # Scatter: Correlation between exactly two numbers
-        case ([], [], [n1, n2]):
+        # Scatter: exactly two numeric columns, no string or time columns
+        case ([], [n1, n2], []) if True:
             return ChartConfig(
                 chart_type="scatter",
                 x=n1,
                 y=n2,
                 title=f"Correlation: {fmt_title(n1)} vs {fmt_title(n2)}",
             )
-
         case _:
             return None
 

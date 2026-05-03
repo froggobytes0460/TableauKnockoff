@@ -1619,6 +1619,7 @@ dependencies = [
     { name = "plotly" },
     { name = "prettytable" },
     { name = "psycopg2-binary" },
+    { name = "pydantic-settings" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1641,6 +1642,7 @@ requires-dist = [
     { name = "plotly", specifier = ">=6.7.0" },
     { name = "prettytable", specifier = ">=3.17.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
+    { name = "pydantic-settings", specifier = ">=2.14.0" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
