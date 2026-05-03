@@ -2,4 +2,6 @@
 
 from fastapi import APIRouter
 
-ui_router = APIRouter(prefix="/ui")
+from .tags import APITag
+
+ui_router = APIRouter(prefix="/ui", tags=[APITag.UI])

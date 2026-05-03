@@ -10,13 +10,13 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastui import prebuilt_html
 
-from web import APITag, api_router, openapi_tags, ui_router
+from web import OPENAPI_TAGS, APITag, api_router, ui_router
 
 app = FastAPI(
     title="tableauknockoff",
     description="A FastAPI application",
     version="0.1.0",
-    openapi_tags=openapi_tags(),
+    openapi_tags=OPENAPI_TAGS,
 )
 
 # Add all URL routes
@@ -53,16 +53,16 @@ app.add_middleware(
 )
 
 
-@app.get("/{path:path}", tags=[APITag.CONFIG])
-async def path_catcher(_: str):
-    """Catches all paths and lets FastUI handle it."""
-    return HTMLResponse(prebuilt_html(api_root_url="/ui"))
-
-
-@app.get("/health", tags=[APITag.CONFIG])
+@app.get("/health", tags=[APITag.METADATA])
 async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/{_:path}", tags=[APITag.UI_HANDLER])
+async def path_catcher(_: str):
+    """Catches all paths and lets FastUI handle it."""
+    return HTMLResponse(prebuilt_html(api_root_url="/ui"))
 
 
 if __name__ == "__main__":

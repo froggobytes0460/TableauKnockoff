@@ -58,27 +58,36 @@ async def run_agent(
             input=input, config=config, version="v2"
         )
     )
-    return AgentOutput.model_validate(raw_output.value)
+    return raw_output.value
 
 
 # NOTE: The following main block is for demonstration and testing purposes. In a production environment, this module would typically be imported and the `run_agent` function would be called from an API endpoint or another part of the application.
 if __name__ == "__main__":
     from langchain_core.globals import set_debug
 
-    _db_config = DatabaseCredential(
-        db_type="postgresql",
-        database=os.getenv("DB_NAME"),  # pyright: ignore[reportArgumentType]
-        username=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),  # pyright: ignore[reportArgumentType]
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT")),  # pyright: ignore[reportArgumentType]
-    )
     input = AgentInput(
         question="Total quantity of sales per store ID.",
     )
     set_debug(True)
     print(
         asyncio.run(
-            run_agent(input=input, db_config=_db_config, thread_id="test_thread")
+            run_agent(
+                input=input,
+                db_config=DatabaseCredential(
+                    db_type="postgresql",
+                    database=os.getenv(
+                        "DB_NAME"
+                    ),  # pyright: ignore[reportArgumentType]
+                    username=os.getenv("DB_USER"),
+                    password=os.getenv(
+                        "DB_PASSWORD"
+                    ),  # pyright: ignore[reportArgumentType]
+                    host=os.getenv("DB_HOST"),
+                    port=int(
+                        os.getenv("DB_PORT")  # pyright: ignore[reportArgumentType]
+                    ),
+                ),
+                thread_id="test_thread",
+            )
         ).model_dump_json(indent=2)
     )

@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common Development Commands
 
 - `uv sync` - Install dependencies
+- `uv sync --dev` - Install dependencies for developement
 - `uv run python main.py` - Start development server (uvicorn)
 - `uv run fastapi dev main.py` - Start FastAPI dev server
 
@@ -29,7 +30,13 @@ This is a **FastAPI application** that uses **LangGraph** to build an AI agent f
 - `schemas.py` - Pydantic models: `DatabaseCredential`, `SQLBlueprint`, `TableSchema`, `ColumnRef`, `Metric`, `Filter`, `OrderBy`
 - `__init__.py` - Exports `DatabaseHandler` and `DatabaseCredential`
 
-**`main.py`** - FastAPI app with CORS middleware, root and health endpoints
+**`main.py`** - FastAPI app with CORS, GZip, and process-time middleware; includes health endpoint and catch-all UI handler
+
+**`web/` - API & UI Layer**
+
+- `api.py` - API endpoints (`/api/submit_question`, `/api/get_chart_data`) with `X_API_KEY` authentication via `INTERNAL_API_KEY` env var
+- `ui.py` - UI router (prefix `/ui`) for FastUI rendering
+- `tags.py` - `APITag` enum for OpenAPI tags; `OPENAPI_TAGS` list for docs
 
 **`langgraph.json`** - Configuration for LangGraph CLI: defines `sql_chart_builder` graph and `run_agent` entrypoint
 
@@ -86,6 +93,10 @@ This is a **FastAPI application** that uses **LangGraph** to build an AI agent f
 - `DatabaseCredential` uses `SecretStr` for passwords (serialized to JSON for graph passing)
 - Network databases require `host` + `port`; SQLite must not have them
 - Query parameters supported via `QueryParam` tuple
+
+## Testing
+
+- Always run pytest with quiet flags to save context window space. - Command Template: `uv run pytest -q --tb=short --no-header [args]`
 
 ## Development Notes
 

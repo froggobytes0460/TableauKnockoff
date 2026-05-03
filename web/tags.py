@@ -10,43 +10,37 @@ class APITag(str, Enum):
     """
 
     # Core functional areas – expand as needed
-    AUTH = "auth"
-    SQL = "sql"
-    CHART = "chart"
-    USER = "user"
-    CONFIG = "config"
-    METRICS = "metrics"
+    USER = "User"
+    API = "API"
+    UI = "UI"
+    DB = "Database"
+    METADATA = "Metadata"
+    UI_HANDLER = "UI Handler"
 
 
-def openapi_tags() -> list[dict[str, str]]:
-    """Generate the OpenAPI `tags` configuration for FastAPI.
-
-    Returns a list of dictionaries understood by FastAPI's `openapi_tags`
-    parameter. Each dict contains a ``name`` and an optional ``description``.
-    """
-    return [
-        {
-            "name": APITag.AUTH.value,
-            "description": "Authentication and security endpoints",
-        },
-        {
-            "name": APITag.SQL.value,
-            "description": "SQL generation and validation endpoints",
-        },
-        {
-            "name": APITag.CHART.value,
-            "description": "Chart generation and visualization endpoints",
-        },
-        {
-            "name": APITag.USER.value,
-            "description": "User profile and preferences endpoints",
-        },
-        {
-            "name": APITag.CONFIG.value,
-            "description": "Application configuration endpoints",
-        },
-        {
-            "name": APITag.METRICS.value,
-            "description": "Metrics and monitoring endpoints",
-        },
-    ]
+OPENAPI_TAGS = [
+    {
+        "name": APITag.DB.value,
+        "description": "Database connection/execution",
+    },
+    {
+        "name": APITag.API.value,
+        "description": "API endpoints",
+    },
+    {
+        "name": APITag.UI.value,
+        "description": "UI endpoints",
+    },
+    {
+        "name": APITag.UI_HANDLER.value,
+        "description": "Handles UI endpoints",
+    },
+    {
+        "name": APITag.USER.value,
+        "description": "User input",
+    },
+    {
+        "name": APITag.METADATA.value,
+        "description": "Extra information about site uptime etc.",
+    },
+]
