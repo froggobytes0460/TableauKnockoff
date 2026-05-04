@@ -62,6 +62,9 @@ async def run_agent(
 
 # NOTE: The following main block is for demonstration and testing purposes. In a production environment, this module would typically be imported and the `run_agent` function would be called from an API endpoint or another part of the application.
 if __name__ == "__main__":
+    if not all([settings.db.name, settings.db.type]):
+        raise EnvironmentError("Database environment need to be set for debug.")
+
     from langchain_core.globals import set_debug
 
     set_debug(True)
@@ -72,8 +75,8 @@ if __name__ == "__main__":
                     question="Total quantity of sales per store ID.",
                 ),
                 db_config=DatabaseCredential(
-                    db_type=settings.db.type,
-                    database=settings.db.name,
+                    db_type=settings.db.type,  # pyright: ignore[reportArgumentType]
+                    database=settings.db.name,  # pyright: ignore[reportArgumentType]
                     username=settings.db.username,
                     password=settings.db.password,
                     host=settings.db.host,
