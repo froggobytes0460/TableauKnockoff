@@ -2,107 +2,87 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Common Development Commands
+## Project Overview
 
-- `uv sync` - Install dependencies
-- `uv sync --dev` - Install dependencies for developement
-- `uv run python main.py` - Start development server (uvicorn)
-- `uv run fastapi dev main.py` - Start FastAPI dev server
+TableauKnockoff is a FastAPI application that converts natural language questions into SQL queries and chart visualizations using LLMs (via Groq) and LangGraph for agent orchestration.
 
-## High-Level Architecture
+## Commands
 
-This is a **FastAPI application** that uses **LangGraph** to build an AI agent for natural language to SQL + visualization. The agent converts user questions into SQL queries and generates chart configurations.
+```bash
+# Install dependencies (includes dev dependencies)
+uv sync --dev
 
-### Core Components
+# Run development server
+uv run python main.py
 
-**`agent/` - LangGraph Agent System**
+# Run all tests
+uv run pytest -q --tb=short --no-header
 
-- `graph.py` - Compiles the agent graph with MemorySaver checkpointer; exposes `run_agent()` entrypoint
-- `nodes.py` - Three nodes: `plan_node`, `sql_validation_node`, `chart_node`
-- `states.py` - Pydantic models: `GraphState`, `AgentInput`, `AgentOutput`, `ChartConfig`, `ValidationResult`
-- `prompts.py` - LLM prompts for planner, validator, and chart selection
-- `deps.py` - `DependencyFactory` with cached database handler instances
-- `llm.py` - LLM wrappers: `LLMPlanner`, `LLMValidator`, `LLMChart`
+# Run a single test
+uv run pytest tests/test_agent.py::TestAgent::test_plan_node_success -v
 
-**`database/` - Database Layer**
+# Format code
+uv run black .
 
-- `db.py` - `DatabaseHandler` class using SQLAlchemy for schema introspection, SQL generation from blueprints, query execution
-- `schemas.py` - Pydantic models: `DatabaseCredential`, `SQLBlueprint`, `TableSchema`, `ColumnRef`, `Metric`, `Filter`, `OrderBy`
-- `__init__.py` - Exports `DatabaseHandler` and `DatabaseCredential`
-
-**`main.py`** - FastAPI app with CORS, GZip, and process-time middleware; includes health endpoint and catch-all UI handler
-
-**`web/` - API & UI Layer**
-
-- `api.py` - API endpoints (`/api/submit_question`, `/api/get_chart_data`) with `X_API_KEY` authentication via `INTERNAL_API_KEY` env var
-- `ui.py` - UI router (prefix `/ui`) for FastUI rendering
-- `tags.py` - `APITag` enum for OpenAPI tags; `OPENAPI_TAGS` list for docs
-
-**`langgraph.json`** - Configuration for LangGraph CLI: defines `sql_chart_builder` graph and `run_agent` entrypoint
-
-### Agent Flow
-
-```mermaid
-  flowchart TD
-      %% Node definitions with improved shapes
-      A(["User Question"]):::entry
-      B(["plan_node"]):::process
-      C(["sql_validation_node"]):::process
-      D(["chart_node"]):::process
-      E(["Output"]):::output
-
-      %% Success paths (labeled)
-      A -->|"submit question"| B
-      B -->|"blueprint generated"| C
-      C -->|"validation passed (≥0.85)"| D
-      D -->|"chart configured"| E
-
-      %% Retry loops (labeled)
-      B -->|"retry ≤ 3"| B
-      C -->|"retry ≤ 3"| C
-
-      %% Styling
-      classDef entry fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#01579b;
-      classDef process fill:#f0f4c3,stroke:#827717,stroke-width:2px,color:#827717;
-      classDef output fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#2e7d32;
-      linkStyle 0 stroke:#2e7d32,stroke-width:2px;
-      linkStyle 1 stroke:#2e7d32,stroke-width:2px;
-      linkStyle 2 stroke:#2e7d32,stroke-width:2px;
-      linkStyle 3 stroke:#2e7d32,stroke-width:2px;
-      linkStyle 4 stroke:#d32f2f,stroke-width:2px,stroke-dasharray:5,5;
-      linkStyle 5 stroke:#d32f2f,stroke-width:2px,stroke-dasharray:5,5;
+# Run pre-commit hooks
+uv run pre-commit run --all-files
 ```
 
-1. **Plan Node**: LLM generates `SQLBlueprint` (dimensions, metrics, filters, order_by, limit) from natural language + DB schema
-2. **SQL Validation Node**: Compiles blueprint to SQLAlchemy, runs 10-row preview, LLM validates with confidence scoring (threshold ≥ 0.85)
-3. **Chart Node**: Rule-based chart selection first (time series → area/line, categorical → bar/pie, numeric pairs → scatter), LLM fallback
+## Architecture
 
-## Key Patterns
+### Agent Flow (LangGraph)
 
-- **State Management**: `GraphState` carries `question`, `sql_blueprint`, `sql`, `preview`, `db_schema`, `chart_config`, `error`, `retry_count` through the graph
-- **Dependency Injection**: `DependencyFactory` passed via `config.configurable["deps"]`, database credentials via `config.configurable["db_config"]`
-- **Caching**: `DatabaseHandler` instances cached via `lru_cache` in `deps.py`
-- **Credential Serialization**: Database credentials passed as serialized JSON strings (`DatabaseCredential.model_dump_json()`) through graph config to avoid Pydantic serialization issues with `SecretStr`
-- **Password Serialization**: `DatabaseCredential.password` uses `@field_serializer` to expose secret values when needed
-- **Schema Introspection**: `DatabaseHandler.get_schema()` returns `list[TableSchema]` with inferred types (numeric, category, time, text)
-- **SQL Blueprint Pattern**: AI generates structured `SQLBlueprint` → `DatabaseHandler.generate_sql_query()` converts to SQLAlchemy `Select`
+The core is a 3-node LangGraph agent in `agent/graph.py`:
 
-## Database Support
+```mermaid
+flowchart LR
+    A[plan] --> B[sql_validation] --> C[chart]
+    B -.->|retry ≤3| A
+    A -.->|retry ≤3| A
+```
 
-- **PostgreSQL**, **MySQL**, **SQLite** via SQLAlchemy
-- `DatabaseCredential` uses `SecretStr` for passwords (serialized to JSON for graph passing)
-- Network databases require `host` + `port`; SQLite must not have them
-- Query parameters supported via `QueryParam` tuple
+1. **plan_node** (`agent/nodes.py`): LLM generates `SQLBlueprint` (structured query plan) from the user's question and database schema
+2. **sql_validation_node**: Validates the compiled SQL query using LLM; if confidence < 0.85 or invalid, routes back to plan (up to 3 retries)
+3. **chart_node**: Generates `ChartConfig` using rule-based heuristics first (`_rule_based_chart`), falls back to LLM if heuristics don't match
 
-## Testing
+The agent state (`agent/states.py`) flows: `GraphState` → `AgentOutput` with fields for `sql_blueprint`, `sql`, `preview`, `chart_config`, and `error`.
 
-- Always run pytest with quiet flags to save context window space. - Command Template: `uv run pytest -q --tb=short --no-header [args]`
+### Key Modules
 
-## Development Notes
+- **`agent/`**: LangGraph agent with LLM interactions via LangChain/Groq
+  - `llm.py`: `LLMPlanner`, `LLMValidator`, `LLMChart` - all use `ChatGroq` with `openai/gpt-oss-120b` model
+  - `prompts.py`: Prompt templates for each LLM task
+  - `deps.py`: `DependencyFactory` for managing dependencies during agent execution
+- **`database/`**: SQLAlchemy-based database abstraction
+  - `db.py`: `DatabaseHandler` - connects, reflects schema, generates SQL from `SQLBlueprint`, executes queries
+  - `schemas.py`: Pydantic models for `SQLBlueprint`, `DatabaseCredential`, `TableSchema`, etc.
+- **`web/`**: FastAPI routes
+  - `api.py`: `/api/submit_question` and `/api/get_chart_data` endpoints (protected by X-API-KEY header)
+  - `ui.py`: FastUI routes at `/ui`
+- **`config/`**: Settings via pydantic-settings with `.env` file support
 
-- Requires Python ≥ 3.14
-- LLM providers via `langchain-groq` (configured in `agent/llm.py`)
-- Visualization uses Plotly (chart config only; rendering elsewhere)
-- `.env` file required at project root (loaded in `graph.py`)
-- `pyproject.toml` uses hatchling build system; packages: `agent`, `database` and `web`
-- It is NOT necessary to include response_model if the output of function is type-hinted, with the EXCEPTION of having fields such as 'exclude unset'
+### Database Support
+
+Supports PostgreSQL, MySQL, and SQLite via SQLAlchemy. Connection config uses nested env vars with `__` delimiter (e.g., `DB__TYPE`, `DB__NAME`).
+
+### API Authentication
+
+All `/api/*` endpoints require `X-API-KEY` header matching `INTERNAL_API_KEY` env var.
+
+## Environment Variables
+
+Required in `.env` (see `.env` for example, already gitignored):
+
+- `GROQ_API_KEY` - Groq API access
+- `INTERNAL_API_KEY` - API authentication
+- `DB__TYPE`, `DB__NAME`, `DB__USERNAME`, `DB__PASSWORD`, `DB__HOST`, `DB__PORT` - Database credentials (only for testing `agent/graph.py`)
+
+Optional LangSmith tracing: `LANGSMITH__API_KEY`, `LANGSMITH__PROJECT`, etc.
+
+## Technical Notes
+
+- **Python 3.14** required (very recent)
+- LLM responses use `response_format: {"type": "json_object"}` with structured output via `with_structured_output`
+- Chart type selection: `bar`, `line`, `scatter`, `pie`, `area` - rule-based first, then LLM fallback
+- SQL blueprint uses `ColumnRef` objects (table + column) throughout - never plain strings
+- Pre-commit hooks run: trailing-whitespace, end-of-file-fixer, check-yaml, check-toml, black, basedpyright, uv-lock, and pytest
