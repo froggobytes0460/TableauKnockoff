@@ -2,14 +2,11 @@
 Compilation of agent graph from nodes.
 """
 
-import asyncio
 from typing import Annotated
 from langgraph.graph import StateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import RunnableConfig
 from typing_extensions import Doc
-
-from config import settings
 
 from .deps import DependencyFactory
 from database import DatabaseCredential
@@ -58,31 +55,3 @@ async def run_agent(
         )
     )
     return raw_output.value
-
-
-# NOTE: The following main block is for demonstration and testing purposes. In a production environment, this module would typically be imported and the `run_agent` function would be called from an API endpoint or another part of the application.
-if __name__ == "__main__":
-    if not all([settings.db.name, settings.db.type]):
-        raise EnvironmentError("Database environment need to be set for debug.")
-
-    from langchain_core.globals import set_debug
-
-    set_debug(True)
-    print(
-        asyncio.run(
-            run_agent(
-                input=AgentInput(
-                    question="Total quantity of sales per store ID.",
-                ),
-                db_config=DatabaseCredential(
-                    db_type=settings.db.type,  # pyright: ignore[reportArgumentType]
-                    database=settings.db.name,  # pyright: ignore[reportArgumentType]
-                    username=settings.db.username,
-                    password=settings.db.password,
-                    host=settings.db.host,
-                    port=settings.db.port,
-                ),
-                thread_id="test_thread",
-            )
-        ).model_dump_json(indent=4)
-    )

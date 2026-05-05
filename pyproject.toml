@@ -3,7 +3,7 @@ name = "tableauknockoff"
 version = "0.1.0"
 description = "A FastAPI application"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.109.0",
     "fastui>=0.9.0",

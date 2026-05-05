@@ -1,35 +1,22 @@
 """Tests for the agent functionality."""
 
-from types import SimpleNamespace
 from typing import Annotated, Any, cast
 from unittest.mock import AsyncMock
 
 from langchain_core.runnables import ensure_config
 from langgraph.constants import END
+from langgraph.types import GraphOutput
 import pytest
 from pytest_mock import MockFixture
 from typing_extensions import Doc
 
-from agent import AgentInput, AgentOutput
+from agent import AgentInput, AgentOutput, run_agent
 from agent.deps import DependencyFactory
 from agent.llm import LLMChart, LLMPlanner, LLMValidator
 from agent.nodes import chart_node, plan_node, sql_validation_node
 from agent.states import ChartConfig, GraphState, ValidationResult
 from database import DatabaseCredential, DatabaseHandler
 from database.schemas import ColumnRef, Metric, OrderBy, SQLBlueprint
-
-SQL_BLUEPRINT = SQLBlueprint(
-    dimensions=[ColumnRef(table="sales", column="store_id")],
-    metrics=[
-        Metric(
-            column=ColumnRef(table="sales", column="quantity"),
-            aggregation="sum",
-            alias="total_quantity",
-        )
-    ],
-    order_by=[OrderBy(column="total_quantity", sort_type="desc")],
-    limit=10,
-)
 
 ResultPreview = Annotated[
     list[dict[str, str | int]], Doc("Preview of database query result.")
@@ -58,11 +45,28 @@ class TestAgent:
         ]
 
     @pytest.fixture
-    def helper_sample_state(self, helper_result_preview: ResultPreview) -> GraphState:
+    def helper_sql_blueprint(self) -> SQLBlueprint:
+        return SQLBlueprint(
+            dimensions=[ColumnRef(table="sales", column="store_id")],
+            metrics=[
+                Metric(
+                    column=ColumnRef(table="sales", column="quantity"),
+                    aggregation="sum",
+                    alias="total_quantity",
+                )
+            ],
+            order_by=[OrderBy(column="total_quantity", sort_type="desc")],
+            limit=10,
+        )
+
+    @pytest.fixture
+    def helper_sample_state(
+        self, helper_result_preview: ResultPreview, helper_sql_blueprint: SQLBlueprint
+    ) -> GraphState:
         """Create a sample GraphState for testing."""
         return GraphState(
             question="Top 10 stores by the total quantity of sales.",
-            sql_blueprint=SQL_BLUEPRINT,
+            sql_blueprint=helper_sql_blueprint,
             preview=helper_result_preview,
         )
 
@@ -93,13 +97,11 @@ class TestAgent:
         mock_error: str,
     ):
         """Tests run_agent for both success and failure scenarios."""
-        from agent.graph import run_agent
-
         # Mock
         _ = mocker.patch(
             "agent.graph.sql_chart_builder.ainvoke",
             new_callable=AsyncMock,
-            return_value=SimpleNamespace(
+            return_value=GraphOutput(
                 value=AgentOutput(
                     success=mock_success,
                     sql=mock_sql,
@@ -125,6 +127,7 @@ class TestAgent:
     def test_plan_node_success(
         self,
         helper_sample_state: GraphState,
+        helper_sql_blueprint: SQLBlueprint,
         mocker: Annotated[
             MockFixture, Doc("Pytest plugin fixure for mocking abilites.")
         ],
@@ -135,7 +138,7 @@ class TestAgent:
         mock_deps = mocker.Mock(spec=DependencyFactory)
         mock_db = mocker.Mock(spec=DatabaseHandler)
 
-        mock_planner.return_value = SQL_BLUEPRINT
+        mock_planner.return_value = helper_sql_blueprint
         _ = mocker.patch("agent.nodes.LLMPlanner", return_value=mock_planner)
         mock_db.get_schema.return_value = []  # pyright: ignore[reportAny]
         mock_deps.get_db.return_value = mock_db  # pyright: ignore[reportAny]
@@ -160,7 +163,7 @@ class TestAgent:
         result_update = cast(
             dict[str, Any], result.update  # pyright: ignore[reportExplicitAny]
         )
-        assert result_update["sql_blueprint"] == SQL_BLUEPRINT
+        assert result_update["sql_blueprint"] == helper_sql_blueprint
         assert result_update["db_schema"] == []
         assert result_update["error"] is None
 

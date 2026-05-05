@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to [Claude Code](https://claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -81,7 +81,7 @@ Optional LangSmith tracing: `LANGSMITH__API_KEY`, `LANGSMITH__PROJECT`, etc.
 
 ## Technical Notes
 
-- **Python 3.14** required (very recent)
+- **Python 3.13** required
 - LLM responses use `response_format: {"type": "json_object"}` with structured output via `with_structured_output`
 - Chart type selection: `bar`, `line`, `scatter`, `pie`, `area` - rule-based first, then LLM fallback
 - SQL blueprint uses `ColumnRef` objects (table + column) throughout - never plain strings

@@ -2,7 +2,6 @@
 The module to allow LLM interaction with the agent.
 """
 
-from string.templatelib import Interpolation, Template
 from typing import Annotated, Any, cast
 import re
 
@@ -58,7 +57,8 @@ class BaseLLM:
             env_key = SecretStr(api_key)
         self.llm: ChatGroq = ChatGroq(
             model=MODEL_ID,
-            api_key=env_key or settings.groq_api_key,
+            api_key=env_key
+            or settings.groq_api_key,  # pyright: ignore[reportArgumentType]
             temperature=0.0,
             max_retries=2,
             model_kwargs={"response_format": {"type": "json_object"}},
@@ -84,55 +84,27 @@ class BaseLLM:
     def format_schema(
         schema: Annotated[list[TableSchema], Doc("The schema to format.")],
     ) -> str:
-        def schema_processor(template: Template) -> str:
-            """Processes template items using structural pattern matching."""
-            parts: list[str] = []
-            for item in template:
-                match item:
-                    case Interpolation(
-                        value=(
-                            col_name,  # pyright: ignore[reportAny, reportUnusedVariable]
-                            str(col_type),
-                        )
-                    ):
-                        role = {"numeric": "metric", "time": "time"}.get(
-                            col_type, "dimension"
-                        )
-                        parts.append(f"({col_type}, {role})")
-
-                    case Interpolation(value=val):  # pyright: ignore[reportAny]
-                        processed_val = (
-                            f'"{val}"'
-                            if "-" in str(val)  # pyright: ignore[reportAny]
-                            or "@" in str(val)  # pyright: ignore[reportAny]
-                            else str(val)  # pyright: ignore[reportAny]
-                        )
-                        parts.append(processed_val)
-
-                    case str(text):
-                        parts.append(text)
-
-            return "".join(parts)
-
         lines: list[str] = []
         for table in schema:
             type_map = {c["name"]: c["type"] for c in table.column_types}
 
-            line = schema_processor(t"{table.name}: [{
-                ', '.join(
-                    schema_processor(t'{col} {(col, type_map.get(col, "unknown"))}')
-                    for col in table.columns
-                )
-            }]")
+            # Format columns with type and role
+            columns_formatted: list[str] = []
+            for col in table.columns:
+                col_type = type_map.get(col, "unknown")
+                role = {"numeric": "metric", "time": "time"}.get(col_type, "dimension")
+                columns_formatted.append(f"{col} ({col_type}, {role})")
+
+            line = f"{table.name}: [{', '.join(columns_formatted)}]"
 
             if table.primary_keys:
-                line += schema_processor(t" | PK: ({', '.join(table.primary_keys)})")
+                line += f" | PK: ({', '.join(table.primary_keys)})"
 
             if table.foreign_keys:
-                line += schema_processor(t" | FK: ({', '.join(
-                    schema_processor(t'{fk["column"]} -> {fk["references"]}')
-                    for fk in table.foreign_keys
-                )})")
+                fks = ", ".join(
+                    f'{fk["column"]} -> {fk["references"]}' for fk in table.foreign_keys
+                )
+                line += f" | FK: ({fks})"
 
             lines.append(line)
 

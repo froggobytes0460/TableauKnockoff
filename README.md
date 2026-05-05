@@ -55,7 +55,7 @@ tableauknockoff/
 
 ### Prerequisites
 
-- Python 3.14+
+- Python 3.13+
 - [uv](https://github.com/astral-sh/uv) package manager
 
 ### Setup
@@ -63,7 +63,7 @@ tableauknockoff/
 1. Clone the repository:
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/froggobytes0460/TableauKnockoff.git
    cd TableauKnockoff
    ```
 

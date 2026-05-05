@@ -1,12 +1,12 @@
 """Schemas for database interactions."""
 
 from typing import Literal
-from pydantic import SecretStr
 from pydantic.config import ConfigDict
 from pydantic.fields import Field, computed_field
+from pydantic.functional_serializers import field_serializer
 from pydantic.functional_validators import model_validator
 from pydantic.main import BaseModel
-from pydantic import field_serializer
+from pydantic.types import SecretStr
 
 
 class QueryParam(BaseModel):
